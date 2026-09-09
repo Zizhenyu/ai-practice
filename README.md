@@ -42,3 +42,27 @@ print(call_llm("You are a helpful assistant.", "Hello", mock="Hello from mock"))
 ```
 
 未配置模型密钥时，上述调用返回固定结果。真实模型可按需安装 openai 或 anthropic 并在本地配置密钥；不要提交 .env 或密钥。测试会移除模型密钥，使用离线模式。
+
+## Session 1 exercises
+
+### Mermaid module diagram
+
+使用 [mermaid.live](https://mermaid.live/) 绘制 Mermaid 格式的模块图。可以从下面的结构开始：
+
+```mermaid
+flowchart LR
+    A[slack-simulator<br/>数据] --> B[模块 1<br/>消息处理]
+    B --> C[模块 2<br/>摘要]
+    B --> D[模块 3<br/>任务提取]
+    B --> E[模块 4<br/>RAG + 风险]
+    C --> F[模块 5<br/>编排 / 集成]
+    D --> F
+    E --> F
+    F --> G[评分]
+```
+
+### Spreadsheet data analysis
+
+使用课程数据表分析个人的 `name` 和 `email` 字段：
+
+[Session 1 Google Sheet](https://docs.google.com/spreadsheets/d/1fztebz0vK9NPx97_qHoxdOPS1MW4t8fEL4XH2D_iS_M/edit?gid=0#gid=0)
