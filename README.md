@@ -64,4 +64,8 @@ brew install --cask git-credential-manager
 
 ## Sessions
 
-- [Session 1: 环境搭建、Hello Bot 与统一 LLM 调用入口](course-demos/session-01-setup/README.md)
+- [Session 1: 环境搭建、Hello Bot、统一 LLM 调用入口与诗词机器人架构练习](course-demos/session-01-setup/README.md)
+
+## Practices
+
+- [Session 1：诗词聊天机器人](practices/session-01-poem-bot.md)
