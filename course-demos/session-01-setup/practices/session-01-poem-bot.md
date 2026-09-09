@@ -31,9 +31,27 @@ flowchart LR
 
 ## 练习二：由架构图生成程序
 
-使用练习一的 Mermaid 图作为输入，让 Codex/Claude 生成 Python 程序；再让生成的程序输出一张 Mermaid 图，用来和原始设计图对比。
+目标：把练习一的 Mermaid 图交给 Codex 或 Claude，让 AI 根据架构约束生成程序。
 
-本仓库提供一个参考实现。请先按照 [Session 1 Quick start](../README.md#quick-start)
+将下面的任务和练习一的 Mermaid 图一起发给 AI：
+
+```text
+请根据 Mermaid 架构图生成一个 Python 诗词聊天机器人。
+
+要求：
+1. 程序文件名为 session_01_poem_bot.py。
+2. 用户输入一句话，程序返回一句合适的古诗词和简短说明。
+3. 复用 course-demos/common/llm.py，不要创建新的 LLM 客户端。
+4. 使用 course-demos/.env 中的模型配置。
+5. 支持 --mock、--once 和 --diagram。
+6. --diagram 输出程序实际架构的 Mermaid 图。
+```
+
+生成后，检查程序是否遵守练习一的三个高层约束：输入经过诗词机器人、机器人复用
+Session 1 共享能力、最终输出古诗词回答。
+
+仓库中的 `session_01_poem_bot.py` 是参考实现。请先按照
+[Session 1 Quick start](../README.md#quick-start)
 创建 `.venv` 并安装依赖。在仓库根目录 `~/student` 激活虚拟环境，然后进入练习目录运行。
 
 macOS (Terminal)：
@@ -64,9 +82,8 @@ python session_01_poem_bot.py --mock
 - `--once "..."`：只回答一句输入，适合快速测试。
 - `--diagram`：输出这个程序实际实现的 Mermaid 架构图，用来和练习一的设计图对比。
 
-程序要求：
+最后，把 `--diagram` 的输出粘贴到 [mermaid.live](https://mermaid.live/)，与练习一的图比较：
 
-- 使用 `course-demos/common/llm.py` 的 `call_llm_safe()`。
-- 使用 `course-demos/.env` 读取模型密钥。
-- 没有模型密钥或 API 失败时，自动 fallback 到 mock 诗句回复。
-- 对用户每一句输入，输出一句古诗词，并附一句很短的说明。
+- 组件是否一一对应？
+- 程序是否复用了 `common/llm.py + .env`？
+- 实现有没有偏离原始架构？

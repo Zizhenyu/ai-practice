@@ -31,9 +31,12 @@ def test_poem_bot_uses_shared_llm_entry(monkeypatch):
 
 
 def test_poem_bot_diagram_mentions_implemented_files():
-    assert "session-01-setup/practices/session_01_poem_bot.py" in poem_bot.ARCHITECTURE_MERMAID
+    assert "session_01_poem_bot.py" in poem_bot.ARCHITECTURE_MERMAID
     assert "course-demos/common/llm.py" in poem_bot.ARCHITECTURE_MERMAID
     assert "course-demos/.env" in poem_bot.ARCHITECTURE_MERMAID
+    assert "古诗词回答" in poem_bot.ARCHITECTURE_MERMAID
+    assert "call_llm_safe" not in poem_bot.ARCHITECTURE_MERMAID
+    assert "API失败" not in poem_bot.ARCHITECTURE_MERMAID
 
 
 def test_poem_bot_parse_args_supports_diagram(monkeypatch):
