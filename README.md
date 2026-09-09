@@ -68,4 +68,4 @@ brew install --cask git-credential-manager
 
 ## Practices
 
-- [Session 1：诗词聊天机器人](practices/session-01-poem-bot.md)
+- [Session 1：诗词聊天机器人](course-demos/session-01-setup/practices/session-01-poem-bot.md)

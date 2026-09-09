@@ -59,4 +59,4 @@ print(call_llm("You are a helpful assistant.", "Hello", mock="Hello from mock"))
 
 ## 课堂练习
 
-- [Session 1：诗词聊天机器人练习](../../practices/session-01-poem-bot.md)
+- [Session 1：诗词聊天机器人练习](practices/session-01-poem-bot.md)
