@@ -2,6 +2,8 @@
 
 **演示要点**：企业级项目从环境自检开始——依赖、密钥、连通性都应可一键验证，而不是"在我机器上能跑"。
 
+开始前请先按根目录 `README.md` 的 GitHub authentication 部分完成 GitHub 登录；Windows/macOS 最常见方式都是使用 GitHub CLI 的 `gh auth login`，也可以使用 Git Credential Manager。
+
 ```bash
 python check_env.py            # 环境自检，输出每项 OK / MISSING
 python hello_bot.py            # 无Slack token时进入控制台模式
