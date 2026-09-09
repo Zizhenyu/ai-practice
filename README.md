@@ -4,17 +4,33 @@
 
 本次仅发布第 1 课代码及必要共享模块。ARCHITECTURE.md 展示完整课程的架构；其中后续课次的代码尚未包含在本次发布中。
 
-## Quick start (PowerShell)
+## Quick start
+
+建议使用 Python 3.12。没有 Slack token 时，Hello Bot 使用控制台模式；输入 quit 退出。可选模型 SDK 或密钥显示 MISSING 不影响离线练习。
+
+如需配置本地密钥，复制 `course-demos/.env.example` 为 `course-demos/.env`，再填入自己的 Slack 或 LLM 密钥。不要提交 `.env`。
+
+### Windows (PowerShell)
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r course-demos/requirements.txt
-.\.venv\Scripts\python.exe course-demos/session-01-setup/check_env.py
-.\.venv\Scripts\python.exe course-demos/session-01-setup/hello_bot.py
-.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r course-demos/requirements.txt
+python course-demos/session-01-setup/check_env.py
+python course-demos/session-01-setup/hello_bot.py
+python -m pytest -q
 ```
 
-建议使用 Python 3.12。没有 Slack token 时，Hello Bot 使用控制台模式；输入 quit 退出。可选模型 SDK 或密钥显示 MISSING 不影响离线练习。
+### macOS (Terminal)
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r course-demos/requirements.txt
+python course-demos/session-01-setup/check_env.py
+python course-demos/session-01-setup/hello_bot.py
+python -m pytest -q
+```
 
 ## LLM mock exercise
 
