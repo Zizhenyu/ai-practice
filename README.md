@@ -6,7 +6,7 @@
 
 ## 通用准备
 
-建议使用 Python 3.9。每个 session 的具体运行命令请进入对应目录查看说明。
+建议使用 Python 3.12。每个 session 的具体运行命令请进入对应目录查看说明。
 
 如需配置本地密钥，复制 `course-demos/.env.example` 为 `course-demos/.env`，再填入自己的 Slack 或 LLM 密钥。不要提交 `.env`。
 
