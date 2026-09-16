@@ -1,0 +1,12 @@
+{
+  "text": "**管理者摘要（2026-07-13 支付事件）**\n\n**业务影响**\n- 08:55–09:58（约63分钟）结账路径降级，客户可见。\n- payment-api p99 延迟峰值 8.4s（SLO 800ms），5xx 达 12% 并上升；受影响接口为 `POST /v2/charges`。\n- 前端结账错误率同步升高，后于 10:00 恢复基线。\n\n**根因（已确认）**\n- 08:45 部署 v2.14.0 新增 saved-payment-methods 端点，其查询存在 N+1，每请求逐条查询并持有连接，导致 payment-db 连接池耗尽（200/200），拖垮 /charges。\n- 证据：pg_stat_activity 显示 187 条 payment-service 的 idle-in-transaction 会话。\n- 注：该端点不直接调用 /charges，但共用同一数据库。\n\n**恢复情况**\n- 09:29 决定回滚；09:30 执行；09:52 回滚完成，全部 Pod 回到 v2.13.2。\n- 连接数 200→121→64；09:58 p99 720ms、5xx 0.3%、连接池 41/200，基础设施侧判定已缓解。\n- 10:00 前端确认结账恢复正常，测试交易通过。\n- 09:58 正式宣布缓解。\n\n**客户沟通**\n- 09:08 曾要求暂缓客户沟通，待确认影响范围。\n- 10:02 指示更新受影响客户与状态页；具体发送情况未在材料中确认。\n\n**剩余风险与未知项**\n- 修复尚未上线：N+1 修复计划以 `saved_payment_methods_v2` 特性开关重新发布，PR 预计次日提交，截止 7/20。\n- 连接池饱和告警（70% 警告、90% 页面）截止 7/17；支付路径 CI 负载测试截止 7/24；运行手册更新截止 7/15。\n- 未知：受影响客户具体数量与范围、客户沟通是否已实际发出、回滚期间是否有失败交易需补偿。\n\n**后续**\n- 无责事后复盘定于 7/15（周三）10:00。",
+  "mode": "deepseek",
+  "model": "deepseek-chat",
+  "audience": "manager",
+  "strategy": "single",
+  "partials": [],
+  "token_counting": "conservative UTF-8 byte estimate",
+  "input_estimate": 4773,
+  "context_budget": 32000,
+  "application_calls": 1
+}

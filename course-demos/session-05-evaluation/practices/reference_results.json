@@ -1,0 +1,524 @@
+{
+  "recorded_at": "2026-09-16T06:23:09.747300+00:00",
+  "mode": "live",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "temperature": 0,
+  "l3_snapshot_sha256": "87cba32fde0023104c2dde6adcb6d52c7cbf1d59e38c8a4a50cc53449091a0a8",
+  "ab_input": [
+    {
+      "id": "m004",
+      "sim_ts": "2026-07-13T09:02:00",
+      "channel": "#incidents",
+      "author": "tom",
+      "text": ":rotating_light: PagerDuty P1 firing — payment-api p99 latency 8.4s (SLO 800ms), 5xx rate 12% and climbing. Started ~08:55. Dashboard: https://grafana.cloudcart.internal/d/payment-api"
+    },
+    {
+      "id": "m005",
+      "sim_ts": "2026-07-13T09:04:00",
+      "channel": "#incidents",
+      "author": "tom",
+      "text": "error budget burning fast. this is customer-facing — checkout POST /v2/charges is in the affected path"
+    },
+    {
+      "id": "m006",
+      "sim_ts": "2026-07-13T09:06:00",
+      "channel": "#incidents",
+      "author": "sarah",
+      "text": "Declaring SEV-2. War room is this thread. Priya you're investigation lead, Tom on mitigation. Jake — anything in the 08:45 deploy that touches the charge path?",
+      "thread_root": null
+    },
+    {
+      "id": "m007",
+      "sim_ts": "2026-07-13T09:07:00",
+      "channel": "#incidents",
+      "author": "jake",
+      "text": "v2.14.0 added the saved-payment-methods endpoint. it doesn't touch /charges directly but it does hit the same db",
+      "thread_root": "m006"
+    },
+    {
+      "id": "m008",
+      "sim_ts": "2026-07-13T09:08:00",
+      "channel": "#incidents",
+      "author": "sarah",
+      "text": "OK. David — please hold customer comms until we confirm impact scope. Tom, prep a rollback of v2.14.0 in case we need it.",
+      "thread_root": "m006"
+    },
+    {
+      "id": "m009",
+      "sim_ts": "2026-07-13T09:09:00",
+      "channel": "#incidents",
+      "author": "tom",
+      "text": "rollback manifest ready, can execute in <5 min on your go",
+      "thread_root": "m006"
+    },
+    {
+      "id": "m010",
+      "sim_ts": "2026-07-13T09:10:00",
+      "channel": "#incidents",
+      "author": "priya",
+      "text": "Looking at DB metrics first — payment-db active connections pinned at max (200/200) since 08:52. That smells like pool exhaustion, not a traffic spike. Digging into what's holding them.",
+      "thread_root": "m006"
+    },
+    {
+      "id": "m014",
+      "sim_ts": "2026-07-13T09:25:00",
+      "channel": "#incidents",
+      "author": "priya",
+      "text": "Found it. pg_stat_activity shows hundreds of idle-in-transaction sessions from payment-service, all on queries from the new saved-payment-methods endpoint. It runs one query per stored payment method (classic N+1) and holds the connection for the whole request. Under morning traffic that exhausts the pool and starves /charges.",
+      "thread_root": "m006"
+    },
+    {
+      "id": "m015",
+      "sim_ts": "2026-07-13T09:26:00",
+      "channel": "#incidents",
+      "author": "priya",
+      "text": "```\nSELECT pid, state, query_start, left(query, 60)\nFROM pg_stat_activity\nWHERE application_name = 'payment-service'\nAND state = 'idle in transaction';\n-- 187 rows\n```",
+      "thread_root": "m006"
+    },
+    {
+      "id": "m016",
+      "sim_ts": "2026-07-13T09:27:00",
+      "channel": "#incidents",
+      "author": "jake",
+      "text": "ugh yeah — i fetch methods in a loop instead of a single JOIN. my bad. fix is straightforward but not 5 minutes",
+      "thread_root": "m006"
+    },
+    {
+      "id": "m017",
+      "sim_ts": "2026-07-13T09:28:00",
+      "channel": "#incidents",
+      "author": "priya",
+      "text": "Rollback first, fix later. No heroics during an incident.",
+      "thread_root": "m006"
+    },
+    {
+      "id": "m018",
+      "sim_ts": "2026-07-13T09:29:00",
+      "channel": "#incidents",
+      "author": "sarah",
+      "text": "Agreed. Tom, execute rollback to v2.13.2.",
+      "thread_root": "m006"
+    },
+    {
+      "id": "m019",
+      "sim_ts": "2026-07-13T09:30:00",
+      "channel": "#incidents",
+      "author": "tom",
+      "text": "rolling back now",
+      "thread_root": "m006"
+    },
+    {
+      "id": "m020",
+      "sim_ts": "2026-07-13T09:52:00",
+      "channel": "#incidents",
+      "author": "tom",
+      "text": "rollback complete, all pods on v2.13.2. connections draining — 200 -> 121 -> 64. p99 down to 1.9s and falling",
+      "thread_root": "m006"
+    },
+    {
+      "id": "m021",
+      "sim_ts": "2026-07-13T09:58:00",
+      "channel": "#incidents",
+      "author": "tom",
+      "text": "metrics recovered: p99 720ms, 5xx 0.3%. pool at 41/200. calling it mitigated from infra side",
+      "thread_root": "m006"
+    },
+    {
+      "id": "m022",
+      "sim_ts": "2026-07-13T10:00:00",
+      "channel": "#incidents",
+      "author": "elena",
+      "text": "Checkout error rate back to baseline on the frontend. Test transactions going through cleanly. :white_check_mark:",
+      "thread_root": "m006"
+    },
+    {
+      "id": "m023",
+      "sim_ts": "2026-07-13T10:02:00",
+      "channel": "#incidents",
+      "author": "sarah",
+      "text": "Incident mitigated at 09:58. Impact window: 08:55–09:58, ~63 minutes of degraded checkout. David — please update affected customers and the status page. Postmortem Wednesday 7/15 10am, I'll send the invite. Thanks everyone for the fast turnaround.",
+      "thread_root": "m006"
+    },
+    {
+      "id": "m024",
+      "sim_ts": "2026-07-13T10:10:00",
+      "channel": "#customer-support",
+      "author": "david",
+      "text": "Replied to Acme Corp on CS-4821: root cause was a bad deploy, rolled back at 09:58, checkout fully recovered. Confirmed with Priya that failed requests errored BEFORE capture — so no double charges, failed orders simply didn't go through. Status page updated to 'resolved'."
+    },
+    {
+      "id": "m027",
+      "sim_ts": "2026-07-13T14:00:00",
+      "channel": "#incidents",
+      "author": "sarah",
+      "text": "Pre-postmortem action items so we don't lose them (full blameless writeup Wednesday):"
+    },
+    {
+      "id": "m028",
+      "sim_ts": "2026-07-13T14:01:00",
+      "channel": "#incidents",
+      "author": "sarah",
+      "text": "1. Jake — fix the N+1 query, re-ship saved-payment-methods behind a feature flag. Due 7/20.\n2. Tom — add connection-pool saturation alert (warn at 70%, page at 90%). Due 7/17.\n3. Aisha — add a payment-path load test to CI so this class of bug is caught pre-deploy. Due 7/24.\n4. Priya — update the payment-service runbook with the pool-exhaustion playbook. Due 7/15, before the postmortem."
+    },
+    {
+      "id": "m029",
+      "sim_ts": "2026-07-13T14:03:00",
+      "channel": "#incidents",
+      "author": "jake",
+      "text": "ack. flag name will be `saved_payment_methods_v2`. fix is a single JOIN + explicit connection release, pr tomorrow"
+    },
+    {
+      "id": "m030",
+      "sim_ts": "2026-07-13T14:04:00",
+      "channel": "#incidents",
+      "author": "tom",
+      "text": "ack, alert rules going into monitoring repo today"
+    },
+    {
+      "id": "m031",
+      "sim_ts": "2026-07-13T14:05:00",
+      "channel": "#incidents",
+      "author": "aisha",
+      "text": "Acknowledged. I'll model the load test on this morning's traffic pattern: 1) baseline checkout flow, 2) checkout + saved-methods reads at 5x, 3) assert pool utilisation < 70%. Will share the test plan for review before wiring into CI."
+    },
+    {
+      "id": "m032",
+      "sim_ts": "2026-07-13T14:06:00",
+      "channel": "#incidents",
+      "author": "priya",
+      "text": "Runbook update in progress. Also adding a 'first 10 minutes' checklist — today we did it right, might as well write down what 'right' looks like."
+    },
+    {
+      "id": "m033",
+      "sim_ts": "2026-07-13T14:08:00",
+      "channel": "#incidents",
+      "author": "sarah",
+      "text": "Perfect. Closing the incident channel thread here. Reminder: blameless postmortem — we're fixing systems, not people."
+    }
+  ],
+  "prompts": {
+    "A": "Summarize this Slack conversation.",
+    "B": "Summarize this Slack conversation.\nInclude each follow-up action with its owner and due date."
+  },
+  "generation_requests": {
+    "A": {
+      "system": "Summarize this Slack conversation.",
+      "user": "[2026-07-13T09:02:00] tom: :rotating_light: PagerDuty P1 firing — payment-api p99 latency 8.4s (SLO 800ms), 5xx rate 12% and climbing. Started ~08:55. Dashboard: https://grafana.cloudcart.internal/d/payment-api\n[2026-07-13T09:04:00] tom: error budget burning fast. this is customer-facing — checkout POST /v2/charges is in the affected path\n[2026-07-13T09:06:00] sarah: Declaring SEV-2. War room is this thread. Priya you're investigation lead, Tom on mitigation. Jake — anything in the 08:45 deploy that touches the charge path?\n[2026-07-13T09:07:00] jake: v2.14.0 added the saved-payment-methods endpoint. it doesn't touch /charges directly but it does hit the same db\n[2026-07-13T09:08:00] sarah: OK. David — please hold customer comms until we confirm impact scope. Tom, prep a rollback of v2.14.0 in case we need it.\n[2026-07-13T09:09:00] tom: rollback manifest ready, can execute in <5 min on your go\n[2026-07-13T09:10:00] priya: Looking at DB metrics first — payment-db active connections pinned at max (200/200) since 08:52. That smells like pool exhaustion, not a traffic spike. Digging into what's holding them.\n[2026-07-13T09:25:00] priya: Found it. pg_stat_activity shows hundreds of idle-in-transaction sessions from payment-service, all on queries from the new saved-payment-methods endpoint. It runs one query per stored payment method (classic N+1) and holds the connection for the whole request. Under morning traffic that exhausts the pool and starves /charges.\n[2026-07-13T09:26:00] priya: ```\nSELECT pid, state, query_start, left(query, 60)\nFROM pg_stat_activity\nWHERE application_name = 'payment-service'\nAND state = 'idle in transaction';\n-- 187 rows\n```\n[2026-07-13T09:27:00] jake: ugh yeah — i fetch methods in a loop instead of a single JOIN. my bad. fix is straightforward but not 5 minutes\n[2026-07-13T09:28:00] priya: Rollback first, fix later. No heroics during an incident.\n[2026-07-13T09:29:00] sarah: Agreed. Tom, execute rollback to v2.13.2.\n[2026-07-13T09:30:00] tom: rolling back now\n[2026-07-13T09:52:00] tom: rollback complete, all pods on v2.13.2. connections draining — 200 -> 121 -> 64. p99 down to 1.9s and falling\n[2026-07-13T09:58:00] tom: metrics recovered: p99 720ms, 5xx 0.3%. pool at 41/200. calling it mitigated from infra side\n[2026-07-13T10:00:00] elena: Checkout error rate back to baseline on the frontend. Test transactions going through cleanly. :white_check_mark:\n[2026-07-13T10:02:00] sarah: Incident mitigated at 09:58. Impact window: 08:55–09:58, ~63 minutes of degraded checkout. David — please update affected customers and the status page. Postmortem Wednesday 7/15 10am, I'll send the invite. Thanks everyone for the fast turnaround.\n[2026-07-13T10:10:00] david: Replied to Acme Corp on CS-4821: root cause was a bad deploy, rolled back at 09:58, checkout fully recovered. Confirmed with Priya that failed requests errored BEFORE capture — so no double charges, failed orders simply didn't go through. Status page updated to 'resolved'.\n[2026-07-13T14:00:00] sarah: Pre-postmortem action items so we don't lose them (full blameless writeup Wednesday):\n[2026-07-13T14:01:00] sarah: 1. Jake — fix the N+1 query, re-ship saved-payment-methods behind a feature flag. Due 7/20.\n2. Tom — add connection-pool saturation alert (warn at 70%, page at 90%). Due 7/17.\n3. Aisha — add a payment-path load test to CI so this class of bug is caught pre-deploy. Due 7/24.\n4. Priya — update the payment-service runbook with the pool-exhaustion playbook. Due 7/15, before the postmortem.\n[2026-07-13T14:03:00] jake: ack. flag name will be `saved_payment_methods_v2`. fix is a single JOIN + explicit connection release, pr tomorrow\n[2026-07-13T14:04:00] tom: ack, alert rules going into monitoring repo today\n[2026-07-13T14:05:00] aisha: Acknowledged. I'll model the load test on this morning's traffic pattern: 1) baseline checkout flow, 2) checkout + saved-methods reads at 5x, 3) assert pool utilisation < 70%. Will share the test plan for review before wiring into CI.\n[2026-07-13T14:06:00] priya: Runbook update in progress. Also adding a 'first 10 minutes' checklist — today we did it right, might as well write down what 'right' looks like.\n[2026-07-13T14:08:00] sarah: Perfect. Closing the incident channel thread here. Reminder: blameless postmortem — we're fixing systems, not people.",
+      "temperature": 0,
+      "max_output_tokens": 1500
+    },
+    "B": {
+      "system": "Summarize this Slack conversation.\nInclude each follow-up action with its owner and due date.",
+      "user": "[2026-07-13T09:02:00] tom: :rotating_light: PagerDuty P1 firing — payment-api p99 latency 8.4s (SLO 800ms), 5xx rate 12% and climbing. Started ~08:55. Dashboard: https://grafana.cloudcart.internal/d/payment-api\n[2026-07-13T09:04:00] tom: error budget burning fast. this is customer-facing — checkout POST /v2/charges is in the affected path\n[2026-07-13T09:06:00] sarah: Declaring SEV-2. War room is this thread. Priya you're investigation lead, Tom on mitigation. Jake — anything in the 08:45 deploy that touches the charge path?\n[2026-07-13T09:07:00] jake: v2.14.0 added the saved-payment-methods endpoint. it doesn't touch /charges directly but it does hit the same db\n[2026-07-13T09:08:00] sarah: OK. David — please hold customer comms until we confirm impact scope. Tom, prep a rollback of v2.14.0 in case we need it.\n[2026-07-13T09:09:00] tom: rollback manifest ready, can execute in <5 min on your go\n[2026-07-13T09:10:00] priya: Looking at DB metrics first — payment-db active connections pinned at max (200/200) since 08:52. That smells like pool exhaustion, not a traffic spike. Digging into what's holding them.\n[2026-07-13T09:25:00] priya: Found it. pg_stat_activity shows hundreds of idle-in-transaction sessions from payment-service, all on queries from the new saved-payment-methods endpoint. It runs one query per stored payment method (classic N+1) and holds the connection for the whole request. Under morning traffic that exhausts the pool and starves /charges.\n[2026-07-13T09:26:00] priya: ```\nSELECT pid, state, query_start, left(query, 60)\nFROM pg_stat_activity\nWHERE application_name = 'payment-service'\nAND state = 'idle in transaction';\n-- 187 rows\n```\n[2026-07-13T09:27:00] jake: ugh yeah — i fetch methods in a loop instead of a single JOIN. my bad. fix is straightforward but not 5 minutes\n[2026-07-13T09:28:00] priya: Rollback first, fix later. No heroics during an incident.\n[2026-07-13T09:29:00] sarah: Agreed. Tom, execute rollback to v2.13.2.\n[2026-07-13T09:30:00] tom: rolling back now\n[2026-07-13T09:52:00] tom: rollback complete, all pods on v2.13.2. connections draining — 200 -> 121 -> 64. p99 down to 1.9s and falling\n[2026-07-13T09:58:00] tom: metrics recovered: p99 720ms, 5xx 0.3%. pool at 41/200. calling it mitigated from infra side\n[2026-07-13T10:00:00] elena: Checkout error rate back to baseline on the frontend. Test transactions going through cleanly. :white_check_mark:\n[2026-07-13T10:02:00] sarah: Incident mitigated at 09:58. Impact window: 08:55–09:58, ~63 minutes of degraded checkout. David — please update affected customers and the status page. Postmortem Wednesday 7/15 10am, I'll send the invite. Thanks everyone for the fast turnaround.\n[2026-07-13T10:10:00] david: Replied to Acme Corp on CS-4821: root cause was a bad deploy, rolled back at 09:58, checkout fully recovered. Confirmed with Priya that failed requests errored BEFORE capture — so no double charges, failed orders simply didn't go through. Status page updated to 'resolved'.\n[2026-07-13T14:00:00] sarah: Pre-postmortem action items so we don't lose them (full blameless writeup Wednesday):\n[2026-07-13T14:01:00] sarah: 1. Jake — fix the N+1 query, re-ship saved-payment-methods behind a feature flag. Due 7/20.\n2. Tom — add connection-pool saturation alert (warn at 70%, page at 90%). Due 7/17.\n3. Aisha — add a payment-path load test to CI so this class of bug is caught pre-deploy. Due 7/24.\n4. Priya — update the payment-service runbook with the pool-exhaustion playbook. Due 7/15, before the postmortem.\n[2026-07-13T14:03:00] jake: ack. flag name will be `saved_payment_methods_v2`. fix is a single JOIN + explicit connection release, pr tomorrow\n[2026-07-13T14:04:00] tom: ack, alert rules going into monitoring repo today\n[2026-07-13T14:05:00] aisha: Acknowledged. I'll model the load test on this morning's traffic pattern: 1) baseline checkout flow, 2) checkout + saved-methods reads at 5x, 3) assert pool utilisation < 70%. Will share the test plan for review before wiring into CI.\n[2026-07-13T14:06:00] priya: Runbook update in progress. Also adding a 'first 10 minutes' checklist — today we did it right, might as well write down what 'right' looks like.\n[2026-07-13T14:08:00] sarah: Perfect. Closing the incident channel thread here. Reminder: blameless postmortem — we're fixing systems, not people.",
+      "temperature": 0,
+      "max_output_tokens": 1500
+    }
+  },
+  "points": [
+    {
+      "id": "P1",
+      "text": "SEV-2 payment outage, impact window 08:55-09:58 (~63 min degraded checkout)"
+    },
+    {
+      "id": "P2",
+      "text": "Root cause: v2.14.0 saved-payment-methods endpoint introduced N+1 query, exhausting the DB connection pool (200/200) and starving /charges"
+    },
+    {
+      "id": "P3",
+      "text": "Mitigation: rollback to v2.13.2 completed 09:58, metrics recovered (p99 720ms, 5xx 0.3%)"
+    },
+    {
+      "id": "P4",
+      "text": "No double charges: failed requests errored before capture"
+    },
+    {
+      "id": "P5",
+      "text": "4 postmortem action items assigned (fix+flag by 7/20, pool alert by 7/17, CI load test by 7/24, runbook by 7/15); postmortem 7/15"
+    }
+  ],
+  "summaries": {
+    "engineer": "**事件摘要（工程师版）**\n\n**时间线**\n- 2026-07-13 08:55 起：payment-api p99 延迟升至 8.4s（SLO 800ms），5xx 率 12% 且上升；影响 checkout `POST /v2/charges`。\n- 09:02 PagerDuty P1 触发；09:06 宣布 SEV-2，Priya 任调查负责人，Tom 负责缓解。\n- 09:10 发现 payment-db 活跃连接自 08:52 起打满（200/200），初判为连接池耗尽而非流量激增。\n- 09:25 定位：`pg_stat_activity` 显示大量来自 payment-service 的 idle-in-transaction 会话，均来自新增 saved-payment-methods 端点；该端点对每个已存支付方式执行一次查询（N+1），并在整个请求期间持有连接，早高峰流量下耗尽连接池，拖垮 `/charges`。\n- 09:29 决定先回滚；09:30 开始回滚至 v2.13.2。\n- 09:52 回滚完成，全部 pod 运行 v2.13.2；连接数 200→121→64，p99 降至 1.9s 并继续下降。\n- 09:58 指标恢复：p99 720ms，5xx 0.3%，连接池 41/200；基础设施侧判定已缓解。\n- 10:00 前端 checkout 错误率回到基线，测试交易正常。\n- 10:02 宣布 09:58 缓解；影响窗口 08:55–09:58，约 63 分钟 checkout 降级。\n\n**证据**\n- DB 指标：连接池自 08:52 打满。\n- `pg_stat_activity` 查询显示 187 行 idle-in-transaction 会话（payment-service）。\n- Jake 确认 v2.14.0 新增 saved-payment-methods 端点，虽不直接触及 `/charges`，但访问同一 DB；其实现为循环逐条获取，未用单次 JOIN。\n\n**已执行操作**\n- 回滚 payment-api 至 v2.13.2（Tom，09:30–09:52）。\n- 确认指标与前端 checkout 恢复。\n\n**当前状态**\n- 已缓解（09:58）。根因已定位为 N+1 查询导致连接池耗尽。客户沟通与状态页更新由 David 负责（已指示，未见完成确认）。\n\n**待办（负责人 / 期限）**\n1. Jake：修复 N+1，将 saved-payment-methods 置于 feature flag（`saved_payment_methods_v2`）后重新发布；改为单次 JOIN + 显式释放连接；PR 次日提交。期限 7/20。\n2. Tom：新增连接池饱和告警（70% 警告，90% 告警）。期限 7/17。\n3. Aisha：在 CI 中加入支付路径负载测试（基线 checkout、checkout+saved-methods 5x、断言池利用率 <70%）；先提交测试计划评审。期限 7/24。\n4. Priya：更新 payment-service runbook，加入连接池耗尽处置手册及“前 10 分钟”清单。期限 7/15，postmortem 前。\n\n**后续**\n- 无责 postmortem：7/15（周三）10:00，Sarah 发邀请。",
+    "manager": "**管理者摘要（2026-07-13 支付事件）**\n\n**业务影响**\n- 08:55–09:58（约63分钟）结账路径降级，客户可见。\n- payment-api p99 延迟峰值 8.4s（SLO 800ms），5xx 达 12% 并上升；受影响接口为 `POST /v2/charges`。\n- 前端结账错误率同步升高，后于 10:00 恢复基线。\n\n**根因（已确认）**\n- 08:45 部署 v2.14.0 新增 saved-payment-methods 端点，其查询存在 N+1，每请求逐条查询并持有连接，导致 payment-db 连接池耗尽（200/200），拖垮 /charges。\n- 证据：pg_stat_activity 显示 187 条 payment-service 的 idle-in-transaction 会话。\n- 注：该端点不直接调用 /charges，但共用同一数据库。\n\n**恢复情况**\n- 09:29 决定回滚；09:30 执行；09:52 回滚完成，全部 Pod 回到 v2.13.2。\n- 连接数 200→121→64；09:58 p99 720ms、5xx 0.3%、连接池 41/200，基础设施侧判定已缓解。\n- 10:00 前端确认结账恢复正常，测试交易通过。\n- 09:58 正式宣布缓解。\n\n**客户沟通**\n- 09:08 曾要求暂缓客户沟通，待确认影响范围。\n- 10:02 指示更新受影响客户与状态页；具体发送情况未在材料中确认。\n\n**剩余风险与未知项**\n- 修复尚未上线：N+1 修复计划以 `saved_payment_methods_v2` 特性开关重新发布，PR 预计次日提交，截止 7/20。\n- 连接池饱和告警（70% 警告、90% 页面）截止 7/17；支付路径 CI 负载测试截止 7/24；运行手册更新截止 7/15。\n- 未知：受影响客户具体数量与范围、客户沟通是否已实际发出、回滚期间是否有失败交易需补偿。\n\n**后续**\n- 无责事后复盘定于 7/15（周三）10:00。",
+    "A": "# Incident Summary: payment-api P1 — 2026-07-13\n\n## Overview\nA **SEV-2** incident affecting customer-facing checkout (`POST /v2/charges`) was declared at 09:06 and mitigated at 09:58. Total impact window: **~63 minutes (08:55–09:58)** of degraded checkout.\n\n## Timeline\n- **09:02** — PagerDuty P1 fires: payment-api p99 latency 8.4s (SLO 800ms), 5xx rate 12% and climbing. Started ~08:55.\n- **09:06** — Sarah declares SEV-2. Priya = investigation lead, Tom = mitigation, Jake = deploy analysis.\n- **09:07** — Jake notes v2.14.0 (deployed 08:45) added the saved-payment-methods endpoint; doesn't touch `/charges` directly but shares the same DB.\n- **09:10** — Priya finds payment-db connections pinned at max (200/200) since 08:52 — suspected pool exhaustion, not a traffic spike.\n- **09:25** — **Root cause identified:** hundreds of `idle in transaction` sessions from payment-service, all from the new saved-payment-methods endpoint. It runs **one query per stored payment method (N+1)** and holds the connection for the whole request. Under morning traffic this exhausts the pool and starves `/charges`.\n- **09:27** — Jake confirms the N+1 (fetching methods in a loop instead of a single JOIN).\n- **09:28–09:29** — Priya: \"Rollback first, fix later.\" Sarah approves rollback to v2.13.2.\n- **09:30** — Tom begins rollback.\n- **09:52** — Rollback complete; connections draining (200 → 121 → 64); p99 down to 1.9s and falling.\n- **09:58** — Metrics recovered: p99 720ms, 5xx 0.3%, pool at 41/200. **Mitigated.**\n- **10:00** — Elena confirms frontend checkout error rate back to baseline; test transactions clean.\n\n## Customer Impact\n- ~63 minutes of degraded checkout.\n- David confirmed with Priya that failed requests errored **before capture** — **no double charges**; failed orders simply didn't go through.\n- Acme Corp replied to on CS-4821; status page updated to \"resolved.\"\n\n## Action Items (pre-postmortem)\n1. **Jake** — Fix the N+1 query, re-ship saved-payment-methods behind feature flag `saved_payment_methods_v2`. Due **7/20**.\n2. **Tom** — Add connection-pool saturation alert (warn 70%, page 90%). Due **7/17**.\n3. **Aisha** — Add payment-path load test to CI. Due **7/24**.\n4. **Priya** — Update payment-service runbook with pool-exhaustion playbook. Due **7/15**.\n\n## Next Steps\n- **Blameless postmortem:** Wednesday 7/15 at 10am (invite from Sarah).\n- Reminder from Sarah: *\"we're fixing systems, not people.\"*",
+    "B": "# Incident Summary: payment-api P1 / SEV-2 — 2026-07-13\n\n## Overview\nA customer-facing P1 incident affecting the `payment-api` charge path (`POST /v2/charges`), declared SEV-2 by Sarah. Mitigated in ~63 minutes via rollback.\n\n## Timeline\n- **08:55** — Incident begins (degraded checkout)\n- **09:02** — PagerDuty P1 fires: p99 latency 8.4s (SLO 800ms), 5xx rate 12% and climbing\n- **09:06** — Sarah declares SEV-2; assigns Priya as investigation lead, Tom on mitigation\n- **09:10** — Priya identifies DB connection pool exhaustion (200/200 since 08:52)\n- **09:25** — Root cause found: N+1 query in new saved-payment-methods endpoint holds connections as `idle in transaction` (187 rows)\n- **09:29** — Sarah orders rollback to v2.13.2\n- **09:52** — Rollback complete; connections draining (200 → 121 → 64), p99 down to 1.9s\n- **09:58** — Metrics recovered: p99 720ms, 5xx 0.3%, pool at 41/200. **Mitigated.**\n- **10:00** — Elena confirms frontend checkout error rate back to baseline\n- **10:10** — David confirms no double charges (failed requests errored before capture); status page updated to \"resolved\"\n\n## Root Cause\nv2.14.0 introduced a saved-payment-methods endpoint that runs one query per stored payment method (N+1) and holds the DB connection for the entire request. Under morning traffic, this exhausted the connection pool and starved the `/charges` path.\n\n## Impact\n- **Window:** 08:55–09:58 (~63 minutes of degraded checkout)\n- Customer-facing checkout failures; no double charges (failed orders simply didn't go through)\n- Acme Corp replied to on ticket CS-4821\n\n## Resolution\nRolled back to v2.13.2. Fix deferred to post-incident (no heroics during incident).\n\n---\n\n## Follow-Up Actions\n\n| # | Action | Owner | Due Date |\n|---|--------|-------|----------|\n| 1 | Fix the N+1 query; re-ship saved-payment-methods behind feature flag `saved_payment_methods_v2` (single JOIN + explicit connection release) | **Jake** | 7/20 |\n| 2 | Add connection-pool saturation alert (warn at 70%, page at 90%) | **Tom** | 7/17 |\n| 3 | Add payment-path load test to CI (baseline checkout; checkout + saved-methods at 5x; assert pool utilisation < 70%) | **Aisha** | 7/24 |\n| 4 | Update payment-service runbook with pool-exhaustion playbook + \"first 10 minutes\" checklist | **Priya** | 7/15 (before postmortem) |\n| 5 | Update affected customers and status page | **David** | ✅ Done (10:10) |\n\n## Next Steps\n- **Blameless postmortem:** Wednesday 7/15 at 10am (invite from Sarah)\n- Reminder from Sarah: *\"we're fixing systems, not people.\"*"
+  },
+  "scores": {
+    "engineer": {
+      "status": "ok",
+      "hits": 4,
+      "total": 5,
+      "coverage": 0.8,
+      "points": [
+        {
+          "point_id": "P1",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: SEV-2 payment outage, impact window 08:55-09:58 (~63 min degraded checkout)\n\nSUMMARY:\n**事件摘要（工程师版）**\n\n**时间线**\n- 2026-07-13 08:55 起：payment-api p99 延迟升至 8.4s（SLO 800ms），5xx 率 12% 且上升；影响 checkout `POST /v2/charges`。\n- 09:02 PagerDuty P1 触发；09:06 宣布 SEV-2，Priya 任调查负责人，Tom 负责缓解。\n- 09:10 发现 payment-db 活跃连接自 08:52 起打满（200/200），初判为连接池耗尽而非流量激增。\n- 09:25 定位：`pg_stat_activity` 显示大量来自 payment-service 的 idle-in-transaction 会话，均来自新增 saved-payment-methods 端点；该端点对每个已存支付方式执行一次查询（N+1），并在整个请求期间持有连接，早高峰流量下耗尽连接池，拖垮 `/charges`。\n- 09:29 决定先回滚；09:30 开始回滚至 v2.13.2。\n- 09:52 回滚完成，全部 pod 运行 v2.13.2；连接数 200→121→64，p99 降至 1.9s 并继续下降。\n- 09:58 指标恢复：p99 720ms，5xx 0.3%，连接池 41/200；基础设施侧判定已缓解。\n- 10:00 前端 checkout 错误率回到基线，测试交易正常。\n- 10:02 宣布 09:58 缓解；影响窗口 08:55–09:58，约 63 分钟 checkout 降级。\n\n**证据**\n- DB 指标：连接池自 08:52 打满。\n- `pg_stat_activity` 查询显示 187 行 idle-in-transaction 会话（payment-service）。\n- Jake 确认 v2.14.0 新增 saved-payment-methods 端点，虽不直接触及 `/charges`，但访问同一 DB；其实现为循环逐条获取，未用单次 JOIN。\n\n**已执行操作**\n- 回滚 payment-api 至 v2.13.2（Tom，09:30–09:52）。\n- 确认指标与前端 checkout 恢复。\n\n**当前状态**\n- 已缓解（09:58）。根因已定位为 N+1 查询导致连接池耗尽。客户沟通与状态页更新由 David 负责（已指示，未见完成确认）。\n\n**待办（负责人 / 期限）**\n1. Jake：修复 N+1，将 saved-payment-methods 置于 feature flag（`saved_payment_methods_v2`）后重新发布；改为单次 JOIN + 显式释放连接；PR 次日提交。期限 7/20。\n2. Tom：新增连接池饱和告警（70% 警告，90% 告警）。期限 7/17。\n3. Aisha：在 CI 中加入支付路径负载测试（基线 checkout、checkout+saved-methods 5x、断言池利用率 <70%）；先提交测试计划评审。期限 7/24。\n4. Priya：更新 payment-service runbook，加入连接池耗尽处置手册及“前 10 分钟”清单。期限 7/15，postmortem 前。\n\n**后续**\n- 无责 postmortem：7/15（周三）10:00，Sarah 发邀请。",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        },
+        {
+          "point_id": "P2",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: Root cause: v2.14.0 saved-payment-methods endpoint introduced N+1 query, exhausting the DB connection pool (200/200) and starving /charges\n\nSUMMARY:\n**事件摘要（工程师版）**\n\n**时间线**\n- 2026-07-13 08:55 起：payment-api p99 延迟升至 8.4s（SLO 800ms），5xx 率 12% 且上升；影响 checkout `POST /v2/charges`。\n- 09:02 PagerDuty P1 触发；09:06 宣布 SEV-2，Priya 任调查负责人，Tom 负责缓解。\n- 09:10 发现 payment-db 活跃连接自 08:52 起打满（200/200），初判为连接池耗尽而非流量激增。\n- 09:25 定位：`pg_stat_activity` 显示大量来自 payment-service 的 idle-in-transaction 会话，均来自新增 saved-payment-methods 端点；该端点对每个已存支付方式执行一次查询（N+1），并在整个请求期间持有连接，早高峰流量下耗尽连接池，拖垮 `/charges`。\n- 09:29 决定先回滚；09:30 开始回滚至 v2.13.2。\n- 09:52 回滚完成，全部 pod 运行 v2.13.2；连接数 200→121→64，p99 降至 1.9s 并继续下降。\n- 09:58 指标恢复：p99 720ms，5xx 0.3%，连接池 41/200；基础设施侧判定已缓解。\n- 10:00 前端 checkout 错误率回到基线，测试交易正常。\n- 10:02 宣布 09:58 缓解；影响窗口 08:55–09:58，约 63 分钟 checkout 降级。\n\n**证据**\n- DB 指标：连接池自 08:52 打满。\n- `pg_stat_activity` 查询显示 187 行 idle-in-transaction 会话（payment-service）。\n- Jake 确认 v2.14.0 新增 saved-payment-methods 端点，虽不直接触及 `/charges`，但访问同一 DB；其实现为循环逐条获取，未用单次 JOIN。\n\n**已执行操作**\n- 回滚 payment-api 至 v2.13.2（Tom，09:30–09:52）。\n- 确认指标与前端 checkout 恢复。\n\n**当前状态**\n- 已缓解（09:58）。根因已定位为 N+1 查询导致连接池耗尽。客户沟通与状态页更新由 David 负责（已指示，未见完成确认）。\n\n**待办（负责人 / 期限）**\n1. Jake：修复 N+1，将 saved-payment-methods 置于 feature flag（`saved_payment_methods_v2`）后重新发布；改为单次 JOIN + 显式释放连接；PR 次日提交。期限 7/20。\n2. Tom：新增连接池饱和告警（70% 警告，90% 告警）。期限 7/17。\n3. Aisha：在 CI 中加入支付路径负载测试（基线 checkout、checkout+saved-methods 5x、断言池利用率 <70%）；先提交测试计划评审。期限 7/24。\n4. Priya：更新 payment-service runbook，加入连接池耗尽处置手册及“前 10 分钟”清单。期限 7/15，postmortem 前。\n\n**后续**\n- 无责 postmortem：7/15（周三）10:00，Sarah 发邀请。",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        },
+        {
+          "point_id": "P3",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: Mitigation: rollback to v2.13.2 completed 09:58, metrics recovered (p99 720ms, 5xx 0.3%)\n\nSUMMARY:\n**事件摘要（工程师版）**\n\n**时间线**\n- 2026-07-13 08:55 起：payment-api p99 延迟升至 8.4s（SLO 800ms），5xx 率 12% 且上升；影响 checkout `POST /v2/charges`。\n- 09:02 PagerDuty P1 触发；09:06 宣布 SEV-2，Priya 任调查负责人，Tom 负责缓解。\n- 09:10 发现 payment-db 活跃连接自 08:52 起打满（200/200），初判为连接池耗尽而非流量激增。\n- 09:25 定位：`pg_stat_activity` 显示大量来自 payment-service 的 idle-in-transaction 会话，均来自新增 saved-payment-methods 端点；该端点对每个已存支付方式执行一次查询（N+1），并在整个请求期间持有连接，早高峰流量下耗尽连接池，拖垮 `/charges`。\n- 09:29 决定先回滚；09:30 开始回滚至 v2.13.2。\n- 09:52 回滚完成，全部 pod 运行 v2.13.2；连接数 200→121→64，p99 降至 1.9s 并继续下降。\n- 09:58 指标恢复：p99 720ms，5xx 0.3%，连接池 41/200；基础设施侧判定已缓解。\n- 10:00 前端 checkout 错误率回到基线，测试交易正常。\n- 10:02 宣布 09:58 缓解；影响窗口 08:55–09:58，约 63 分钟 checkout 降级。\n\n**证据**\n- DB 指标：连接池自 08:52 打满。\n- `pg_stat_activity` 查询显示 187 行 idle-in-transaction 会话（payment-service）。\n- Jake 确认 v2.14.0 新增 saved-payment-methods 端点，虽不直接触及 `/charges`，但访问同一 DB；其实现为循环逐条获取，未用单次 JOIN。\n\n**已执行操作**\n- 回滚 payment-api 至 v2.13.2（Tom，09:30–09:52）。\n- 确认指标与前端 checkout 恢复。\n\n**当前状态**\n- 已缓解（09:58）。根因已定位为 N+1 查询导致连接池耗尽。客户沟通与状态页更新由 David 负责（已指示，未见完成确认）。\n\n**待办（负责人 / 期限）**\n1. Jake：修复 N+1，将 saved-payment-methods 置于 feature flag（`saved_payment_methods_v2`）后重新发布；改为单次 JOIN + 显式释放连接；PR 次日提交。期限 7/20。\n2. Tom：新增连接池饱和告警（70% 警告，90% 告警）。期限 7/17。\n3. Aisha：在 CI 中加入支付路径负载测试（基线 checkout、checkout+saved-methods 5x、断言池利用率 <70%）；先提交测试计划评审。期限 7/24。\n4. Priya：更新 payment-service runbook，加入连接池耗尽处置手册及“前 10 分钟”清单。期限 7/15，postmortem 前。\n\n**后续**\n- 无责 postmortem：7/15（周三）10:00，Sarah 发邀请。",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        },
+        {
+          "point_id": "P4",
+          "status": "ok",
+          "hit": false,
+          "raw_output": "NO",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: No double charges: failed requests errored before capture\n\nSUMMARY:\n**事件摘要（工程师版）**\n\n**时间线**\n- 2026-07-13 08:55 起：payment-api p99 延迟升至 8.4s（SLO 800ms），5xx 率 12% 且上升；影响 checkout `POST /v2/charges`。\n- 09:02 PagerDuty P1 触发；09:06 宣布 SEV-2，Priya 任调查负责人，Tom 负责缓解。\n- 09:10 发现 payment-db 活跃连接自 08:52 起打满（200/200），初判为连接池耗尽而非流量激增。\n- 09:25 定位：`pg_stat_activity` 显示大量来自 payment-service 的 idle-in-transaction 会话，均来自新增 saved-payment-methods 端点；该端点对每个已存支付方式执行一次查询（N+1），并在整个请求期间持有连接，早高峰流量下耗尽连接池，拖垮 `/charges`。\n- 09:29 决定先回滚；09:30 开始回滚至 v2.13.2。\n- 09:52 回滚完成，全部 pod 运行 v2.13.2；连接数 200→121→64，p99 降至 1.9s 并继续下降。\n- 09:58 指标恢复：p99 720ms，5xx 0.3%，连接池 41/200；基础设施侧判定已缓解。\n- 10:00 前端 checkout 错误率回到基线，测试交易正常。\n- 10:02 宣布 09:58 缓解；影响窗口 08:55–09:58，约 63 分钟 checkout 降级。\n\n**证据**\n- DB 指标：连接池自 08:52 打满。\n- `pg_stat_activity` 查询显示 187 行 idle-in-transaction 会话（payment-service）。\n- Jake 确认 v2.14.0 新增 saved-payment-methods 端点，虽不直接触及 `/charges`，但访问同一 DB；其实现为循环逐条获取，未用单次 JOIN。\n\n**已执行操作**\n- 回滚 payment-api 至 v2.13.2（Tom，09:30–09:52）。\n- 确认指标与前端 checkout 恢复。\n\n**当前状态**\n- 已缓解（09:58）。根因已定位为 N+1 查询导致连接池耗尽。客户沟通与状态页更新由 David 负责（已指示，未见完成确认）。\n\n**待办（负责人 / 期限）**\n1. Jake：修复 N+1，将 saved-payment-methods 置于 feature flag（`saved_payment_methods_v2`）后重新发布；改为单次 JOIN + 显式释放连接；PR 次日提交。期限 7/20。\n2. Tom：新增连接池饱和告警（70% 警告，90% 告警）。期限 7/17。\n3. Aisha：在 CI 中加入支付路径负载测试（基线 checkout、checkout+saved-methods 5x、断言池利用率 <70%）；先提交测试计划评审。期限 7/24。\n4. Priya：更新 payment-service runbook，加入连接池耗尽处置手册及“前 10 分钟”清单。期限 7/15，postmortem 前。\n\n**后续**\n- 无责 postmortem：7/15（周三）10:00，Sarah 发邀请。",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        },
+        {
+          "point_id": "P5",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: 4 postmortem action items assigned (fix+flag by 7/20, pool alert by 7/17, CI load test by 7/24, runbook by 7/15); postmortem 7/15\n\nSUMMARY:\n**事件摘要（工程师版）**\n\n**时间线**\n- 2026-07-13 08:55 起：payment-api p99 延迟升至 8.4s（SLO 800ms），5xx 率 12% 且上升；影响 checkout `POST /v2/charges`。\n- 09:02 PagerDuty P1 触发；09:06 宣布 SEV-2，Priya 任调查负责人，Tom 负责缓解。\n- 09:10 发现 payment-db 活跃连接自 08:52 起打满（200/200），初判为连接池耗尽而非流量激增。\n- 09:25 定位：`pg_stat_activity` 显示大量来自 payment-service 的 idle-in-transaction 会话，均来自新增 saved-payment-methods 端点；该端点对每个已存支付方式执行一次查询（N+1），并在整个请求期间持有连接，早高峰流量下耗尽连接池，拖垮 `/charges`。\n- 09:29 决定先回滚；09:30 开始回滚至 v2.13.2。\n- 09:52 回滚完成，全部 pod 运行 v2.13.2；连接数 200→121→64，p99 降至 1.9s 并继续下降。\n- 09:58 指标恢复：p99 720ms，5xx 0.3%，连接池 41/200；基础设施侧判定已缓解。\n- 10:00 前端 checkout 错误率回到基线，测试交易正常。\n- 10:02 宣布 09:58 缓解；影响窗口 08:55–09:58，约 63 分钟 checkout 降级。\n\n**证据**\n- DB 指标：连接池自 08:52 打满。\n- `pg_stat_activity` 查询显示 187 行 idle-in-transaction 会话（payment-service）。\n- Jake 确认 v2.14.0 新增 saved-payment-methods 端点，虽不直接触及 `/charges`，但访问同一 DB；其实现为循环逐条获取，未用单次 JOIN。\n\n**已执行操作**\n- 回滚 payment-api 至 v2.13.2（Tom，09:30–09:52）。\n- 确认指标与前端 checkout 恢复。\n\n**当前状态**\n- 已缓解（09:58）。根因已定位为 N+1 查询导致连接池耗尽。客户沟通与状态页更新由 David 负责（已指示，未见完成确认）。\n\n**待办（负责人 / 期限）**\n1. Jake：修复 N+1，将 saved-payment-methods 置于 feature flag（`saved_payment_methods_v2`）后重新发布；改为单次 JOIN + 显式释放连接；PR 次日提交。期限 7/20。\n2. Tom：新增连接池饱和告警（70% 警告，90% 告警）。期限 7/17。\n3. Aisha：在 CI 中加入支付路径负载测试（基线 checkout、checkout+saved-methods 5x、断言池利用率 <70%）；先提交测试计划评审。期限 7/24。\n4. Priya：更新 payment-service runbook，加入连接池耗尽处置手册及“前 10 分钟”清单。期限 7/15，postmortem 前。\n\n**后续**\n- 无责 postmortem：7/15（周三）10:00，Sarah 发邀请。",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        }
+      ],
+      "application_calls": 5
+    },
+    "manager": {
+      "status": "ok",
+      "hits": 4,
+      "total": 5,
+      "coverage": 0.8,
+      "points": [
+        {
+          "point_id": "P1",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: SEV-2 payment outage, impact window 08:55-09:58 (~63 min degraded checkout)\n\nSUMMARY:\n**管理者摘要（2026-07-13 支付事件）**\n\n**业务影响**\n- 08:55–09:58（约63分钟）结账路径降级，客户可见。\n- payment-api p99 延迟峰值 8.4s（SLO 800ms），5xx 达 12% 并上升；受影响接口为 `POST /v2/charges`。\n- 前端结账错误率同步升高，后于 10:00 恢复基线。\n\n**根因（已确认）**\n- 08:45 部署 v2.14.0 新增 saved-payment-methods 端点，其查询存在 N+1，每请求逐条查询并持有连接，导致 payment-db 连接池耗尽（200/200），拖垮 /charges。\n- 证据：pg_stat_activity 显示 187 条 payment-service 的 idle-in-transaction 会话。\n- 注：该端点不直接调用 /charges，但共用同一数据库。\n\n**恢复情况**\n- 09:29 决定回滚；09:30 执行；09:52 回滚完成，全部 Pod 回到 v2.13.2。\n- 连接数 200→121→64；09:58 p99 720ms、5xx 0.3%、连接池 41/200，基础设施侧判定已缓解。\n- 10:00 前端确认结账恢复正常，测试交易通过。\n- 09:58 正式宣布缓解。\n\n**客户沟通**\n- 09:08 曾要求暂缓客户沟通，待确认影响范围。\n- 10:02 指示更新受影响客户与状态页；具体发送情况未在材料中确认。\n\n**剩余风险与未知项**\n- 修复尚未上线：N+1 修复计划以 `saved_payment_methods_v2` 特性开关重新发布，PR 预计次日提交，截止 7/20。\n- 连接池饱和告警（70% 警告、90% 页面）截止 7/17；支付路径 CI 负载测试截止 7/24；运行手册更新截止 7/15。\n- 未知：受影响客户具体数量与范围、客户沟通是否已实际发出、回滚期间是否有失败交易需补偿。\n\n**后续**\n- 无责事后复盘定于 7/15（周三）10:00。",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        },
+        {
+          "point_id": "P2",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: Root cause: v2.14.0 saved-payment-methods endpoint introduced N+1 query, exhausting the DB connection pool (200/200) and starving /charges\n\nSUMMARY:\n**管理者摘要（2026-07-13 支付事件）**\n\n**业务影响**\n- 08:55–09:58（约63分钟）结账路径降级，客户可见。\n- payment-api p99 延迟峰值 8.4s（SLO 800ms），5xx 达 12% 并上升；受影响接口为 `POST /v2/charges`。\n- 前端结账错误率同步升高，后于 10:00 恢复基线。\n\n**根因（已确认）**\n- 08:45 部署 v2.14.0 新增 saved-payment-methods 端点，其查询存在 N+1，每请求逐条查询并持有连接，导致 payment-db 连接池耗尽（200/200），拖垮 /charges。\n- 证据：pg_stat_activity 显示 187 条 payment-service 的 idle-in-transaction 会话。\n- 注：该端点不直接调用 /charges，但共用同一数据库。\n\n**恢复情况**\n- 09:29 决定回滚；09:30 执行；09:52 回滚完成，全部 Pod 回到 v2.13.2。\n- 连接数 200→121→64；09:58 p99 720ms、5xx 0.3%、连接池 41/200，基础设施侧判定已缓解。\n- 10:00 前端确认结账恢复正常，测试交易通过。\n- 09:58 正式宣布缓解。\n\n**客户沟通**\n- 09:08 曾要求暂缓客户沟通，待确认影响范围。\n- 10:02 指示更新受影响客户与状态页；具体发送情况未在材料中确认。\n\n**剩余风险与未知项**\n- 修复尚未上线：N+1 修复计划以 `saved_payment_methods_v2` 特性开关重新发布，PR 预计次日提交，截止 7/20。\n- 连接池饱和告警（70% 警告、90% 页面）截止 7/17；支付路径 CI 负载测试截止 7/24；运行手册更新截止 7/15。\n- 未知：受影响客户具体数量与范围、客户沟通是否已实际发出、回滚期间是否有失败交易需补偿。\n\n**后续**\n- 无责事后复盘定于 7/15（周三）10:00。",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        },
+        {
+          "point_id": "P3",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: Mitigation: rollback to v2.13.2 completed 09:58, metrics recovered (p99 720ms, 5xx 0.3%)\n\nSUMMARY:\n**管理者摘要（2026-07-13 支付事件）**\n\n**业务影响**\n- 08:55–09:58（约63分钟）结账路径降级，客户可见。\n- payment-api p99 延迟峰值 8.4s（SLO 800ms），5xx 达 12% 并上升；受影响接口为 `POST /v2/charges`。\n- 前端结账错误率同步升高，后于 10:00 恢复基线。\n\n**根因（已确认）**\n- 08:45 部署 v2.14.0 新增 saved-payment-methods 端点，其查询存在 N+1，每请求逐条查询并持有连接，导致 payment-db 连接池耗尽（200/200），拖垮 /charges。\n- 证据：pg_stat_activity 显示 187 条 payment-service 的 idle-in-transaction 会话。\n- 注：该端点不直接调用 /charges，但共用同一数据库。\n\n**恢复情况**\n- 09:29 决定回滚；09:30 执行；09:52 回滚完成，全部 Pod 回到 v2.13.2。\n- 连接数 200→121→64；09:58 p99 720ms、5xx 0.3%、连接池 41/200，基础设施侧判定已缓解。\n- 10:00 前端确认结账恢复正常，测试交易通过。\n- 09:58 正式宣布缓解。\n\n**客户沟通**\n- 09:08 曾要求暂缓客户沟通，待确认影响范围。\n- 10:02 指示更新受影响客户与状态页；具体发送情况未在材料中确认。\n\n**剩余风险与未知项**\n- 修复尚未上线：N+1 修复计划以 `saved_payment_methods_v2` 特性开关重新发布，PR 预计次日提交，截止 7/20。\n- 连接池饱和告警（70% 警告、90% 页面）截止 7/17；支付路径 CI 负载测试截止 7/24；运行手册更新截止 7/15。\n- 未知：受影响客户具体数量与范围、客户沟通是否已实际发出、回滚期间是否有失败交易需补偿。\n\n**后续**\n- 无责事后复盘定于 7/15（周三）10:00。",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        },
+        {
+          "point_id": "P4",
+          "status": "ok",
+          "hit": false,
+          "raw_output": "NO",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: No double charges: failed requests errored before capture\n\nSUMMARY:\n**管理者摘要（2026-07-13 支付事件）**\n\n**业务影响**\n- 08:55–09:58（约63分钟）结账路径降级，客户可见。\n- payment-api p99 延迟峰值 8.4s（SLO 800ms），5xx 达 12% 并上升；受影响接口为 `POST /v2/charges`。\n- 前端结账错误率同步升高，后于 10:00 恢复基线。\n\n**根因（已确认）**\n- 08:45 部署 v2.14.0 新增 saved-payment-methods 端点，其查询存在 N+1，每请求逐条查询并持有连接，导致 payment-db 连接池耗尽（200/200），拖垮 /charges。\n- 证据：pg_stat_activity 显示 187 条 payment-service 的 idle-in-transaction 会话。\n- 注：该端点不直接调用 /charges，但共用同一数据库。\n\n**恢复情况**\n- 09:29 决定回滚；09:30 执行；09:52 回滚完成，全部 Pod 回到 v2.13.2。\n- 连接数 200→121→64；09:58 p99 720ms、5xx 0.3%、连接池 41/200，基础设施侧判定已缓解。\n- 10:00 前端确认结账恢复正常，测试交易通过。\n- 09:58 正式宣布缓解。\n\n**客户沟通**\n- 09:08 曾要求暂缓客户沟通，待确认影响范围。\n- 10:02 指示更新受影响客户与状态页；具体发送情况未在材料中确认。\n\n**剩余风险与未知项**\n- 修复尚未上线：N+1 修复计划以 `saved_payment_methods_v2` 特性开关重新发布，PR 预计次日提交，截止 7/20。\n- 连接池饱和告警（70% 警告、90% 页面）截止 7/17；支付路径 CI 负载测试截止 7/24；运行手册更新截止 7/15。\n- 未知：受影响客户具体数量与范围、客户沟通是否已实际发出、回滚期间是否有失败交易需补偿。\n\n**后续**\n- 无责事后复盘定于 7/15（周三）10:00。",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        },
+        {
+          "point_id": "P5",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: 4 postmortem action items assigned (fix+flag by 7/20, pool alert by 7/17, CI load test by 7/24, runbook by 7/15); postmortem 7/15\n\nSUMMARY:\n**管理者摘要（2026-07-13 支付事件）**\n\n**业务影响**\n- 08:55–09:58（约63分钟）结账路径降级，客户可见。\n- payment-api p99 延迟峰值 8.4s（SLO 800ms），5xx 达 12% 并上升；受影响接口为 `POST /v2/charges`。\n- 前端结账错误率同步升高，后于 10:00 恢复基线。\n\n**根因（已确认）**\n- 08:45 部署 v2.14.0 新增 saved-payment-methods 端点，其查询存在 N+1，每请求逐条查询并持有连接，导致 payment-db 连接池耗尽（200/200），拖垮 /charges。\n- 证据：pg_stat_activity 显示 187 条 payment-service 的 idle-in-transaction 会话。\n- 注：该端点不直接调用 /charges，但共用同一数据库。\n\n**恢复情况**\n- 09:29 决定回滚；09:30 执行；09:52 回滚完成，全部 Pod 回到 v2.13.2。\n- 连接数 200→121→64；09:58 p99 720ms、5xx 0.3%、连接池 41/200，基础设施侧判定已缓解。\n- 10:00 前端确认结账恢复正常，测试交易通过。\n- 09:58 正式宣布缓解。\n\n**客户沟通**\n- 09:08 曾要求暂缓客户沟通，待确认影响范围。\n- 10:02 指示更新受影响客户与状态页；具体发送情况未在材料中确认。\n\n**剩余风险与未知项**\n- 修复尚未上线：N+1 修复计划以 `saved_payment_methods_v2` 特性开关重新发布，PR 预计次日提交，截止 7/20。\n- 连接池饱和告警（70% 警告、90% 页面）截止 7/17；支付路径 CI 负载测试截止 7/24；运行手册更新截止 7/15。\n- 未知：受影响客户具体数量与范围、客户沟通是否已实际发出、回滚期间是否有失败交易需补偿。\n\n**后续**\n- 无责事后复盘定于 7/15（周三）10:00。",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        }
+      ],
+      "application_calls": 5
+    },
+    "A": {
+      "status": "ok",
+      "hits": 5,
+      "total": 5,
+      "coverage": 1.0,
+      "points": [
+        {
+          "point_id": "P1",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: SEV-2 payment outage, impact window 08:55-09:58 (~63 min degraded checkout)\n\nSUMMARY:\n# Incident Summary: payment-api P1 — 2026-07-13\n\n## Overview\nA **SEV-2** incident affecting customer-facing checkout (`POST /v2/charges`) was declared at 09:06 and mitigated at 09:58. Total impact window: **~63 minutes (08:55–09:58)** of degraded checkout.\n\n## Timeline\n- **09:02** — PagerDuty P1 fires: payment-api p99 latency 8.4s (SLO 800ms), 5xx rate 12% and climbing. Started ~08:55.\n- **09:06** — Sarah declares SEV-2. Priya = investigation lead, Tom = mitigation, Jake = deploy analysis.\n- **09:07** — Jake notes v2.14.0 (deployed 08:45) added the saved-payment-methods endpoint; doesn't touch `/charges` directly but shares the same DB.\n- **09:10** — Priya finds payment-db connections pinned at max (200/200) since 08:52 — suspected pool exhaustion, not a traffic spike.\n- **09:25** — **Root cause identified:** hundreds of `idle in transaction` sessions from payment-service, all from the new saved-payment-methods endpoint. It runs **one query per stored payment method (N+1)** and holds the connection for the whole request. Under morning traffic this exhausts the pool and starves `/charges`.\n- **09:27** — Jake confirms the N+1 (fetching methods in a loop instead of a single JOIN).\n- **09:28–09:29** — Priya: \"Rollback first, fix later.\" Sarah approves rollback to v2.13.2.\n- **09:30** — Tom begins rollback.\n- **09:52** — Rollback complete; connections draining (200 → 121 → 64); p99 down to 1.9s and falling.\n- **09:58** — Metrics recovered: p99 720ms, 5xx 0.3%, pool at 41/200. **Mitigated.**\n- **10:00** — Elena confirms frontend checkout error rate back to baseline; test transactions clean.\n\n## Customer Impact\n- ~63 minutes of degraded checkout.\n- David confirmed with Priya that failed requests errored **before capture** — **no double charges**; failed orders simply didn't go through.\n- Acme Corp replied to on CS-4821; status page updated to \"resolved.\"\n\n## Action Items (pre-postmortem)\n1. **Jake** — Fix the N+1 query, re-ship saved-payment-methods behind feature flag `saved_payment_methods_v2`. Due **7/20**.\n2. **Tom** — Add connection-pool saturation alert (warn 70%, page 90%). Due **7/17**.\n3. **Aisha** — Add payment-path load test to CI. Due **7/24**.\n4. **Priya** — Update payment-service runbook with pool-exhaustion playbook. Due **7/15**.\n\n## Next Steps\n- **Blameless postmortem:** Wednesday 7/15 at 10am (invite from Sarah).\n- Reminder from Sarah: *\"we're fixing systems, not people.\"*",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        },
+        {
+          "point_id": "P2",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: Root cause: v2.14.0 saved-payment-methods endpoint introduced N+1 query, exhausting the DB connection pool (200/200) and starving /charges\n\nSUMMARY:\n# Incident Summary: payment-api P1 — 2026-07-13\n\n## Overview\nA **SEV-2** incident affecting customer-facing checkout (`POST /v2/charges`) was declared at 09:06 and mitigated at 09:58. Total impact window: **~63 minutes (08:55–09:58)** of degraded checkout.\n\n## Timeline\n- **09:02** — PagerDuty P1 fires: payment-api p99 latency 8.4s (SLO 800ms), 5xx rate 12% and climbing. Started ~08:55.\n- **09:06** — Sarah declares SEV-2. Priya = investigation lead, Tom = mitigation, Jake = deploy analysis.\n- **09:07** — Jake notes v2.14.0 (deployed 08:45) added the saved-payment-methods endpoint; doesn't touch `/charges` directly but shares the same DB.\n- **09:10** — Priya finds payment-db connections pinned at max (200/200) since 08:52 — suspected pool exhaustion, not a traffic spike.\n- **09:25** — **Root cause identified:** hundreds of `idle in transaction` sessions from payment-service, all from the new saved-payment-methods endpoint. It runs **one query per stored payment method (N+1)** and holds the connection for the whole request. Under morning traffic this exhausts the pool and starves `/charges`.\n- **09:27** — Jake confirms the N+1 (fetching methods in a loop instead of a single JOIN).\n- **09:28–09:29** — Priya: \"Rollback first, fix later.\" Sarah approves rollback to v2.13.2.\n- **09:30** — Tom begins rollback.\n- **09:52** — Rollback complete; connections draining (200 → 121 → 64); p99 down to 1.9s and falling.\n- **09:58** — Metrics recovered: p99 720ms, 5xx 0.3%, pool at 41/200. **Mitigated.**\n- **10:00** — Elena confirms frontend checkout error rate back to baseline; test transactions clean.\n\n## Customer Impact\n- ~63 minutes of degraded checkout.\n- David confirmed with Priya that failed requests errored **before capture** — **no double charges**; failed orders simply didn't go through.\n- Acme Corp replied to on CS-4821; status page updated to \"resolved.\"\n\n## Action Items (pre-postmortem)\n1. **Jake** — Fix the N+1 query, re-ship saved-payment-methods behind feature flag `saved_payment_methods_v2`. Due **7/20**.\n2. **Tom** — Add connection-pool saturation alert (warn 70%, page 90%). Due **7/17**.\n3. **Aisha** — Add payment-path load test to CI. Due **7/24**.\n4. **Priya** — Update payment-service runbook with pool-exhaustion playbook. Due **7/15**.\n\n## Next Steps\n- **Blameless postmortem:** Wednesday 7/15 at 10am (invite from Sarah).\n- Reminder from Sarah: *\"we're fixing systems, not people.\"*",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        },
+        {
+          "point_id": "P3",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: Mitigation: rollback to v2.13.2 completed 09:58, metrics recovered (p99 720ms, 5xx 0.3%)\n\nSUMMARY:\n# Incident Summary: payment-api P1 — 2026-07-13\n\n## Overview\nA **SEV-2** incident affecting customer-facing checkout (`POST /v2/charges`) was declared at 09:06 and mitigated at 09:58. Total impact window: **~63 minutes (08:55–09:58)** of degraded checkout.\n\n## Timeline\n- **09:02** — PagerDuty P1 fires: payment-api p99 latency 8.4s (SLO 800ms), 5xx rate 12% and climbing. Started ~08:55.\n- **09:06** — Sarah declares SEV-2. Priya = investigation lead, Tom = mitigation, Jake = deploy analysis.\n- **09:07** — Jake notes v2.14.0 (deployed 08:45) added the saved-payment-methods endpoint; doesn't touch `/charges` directly but shares the same DB.\n- **09:10** — Priya finds payment-db connections pinned at max (200/200) since 08:52 — suspected pool exhaustion, not a traffic spike.\n- **09:25** — **Root cause identified:** hundreds of `idle in transaction` sessions from payment-service, all from the new saved-payment-methods endpoint. It runs **one query per stored payment method (N+1)** and holds the connection for the whole request. Under morning traffic this exhausts the pool and starves `/charges`.\n- **09:27** — Jake confirms the N+1 (fetching methods in a loop instead of a single JOIN).\n- **09:28–09:29** — Priya: \"Rollback first, fix later.\" Sarah approves rollback to v2.13.2.\n- **09:30** — Tom begins rollback.\n- **09:52** — Rollback complete; connections draining (200 → 121 → 64); p99 down to 1.9s and falling.\n- **09:58** — Metrics recovered: p99 720ms, 5xx 0.3%, pool at 41/200. **Mitigated.**\n- **10:00** — Elena confirms frontend checkout error rate back to baseline; test transactions clean.\n\n## Customer Impact\n- ~63 minutes of degraded checkout.\n- David confirmed with Priya that failed requests errored **before capture** — **no double charges**; failed orders simply didn't go through.\n- Acme Corp replied to on CS-4821; status page updated to \"resolved.\"\n\n## Action Items (pre-postmortem)\n1. **Jake** — Fix the N+1 query, re-ship saved-payment-methods behind feature flag `saved_payment_methods_v2`. Due **7/20**.\n2. **Tom** — Add connection-pool saturation alert (warn 70%, page 90%). Due **7/17**.\n3. **Aisha** — Add payment-path load test to CI. Due **7/24**.\n4. **Priya** — Update payment-service runbook with pool-exhaustion playbook. Due **7/15**.\n\n## Next Steps\n- **Blameless postmortem:** Wednesday 7/15 at 10am (invite from Sarah).\n- Reminder from Sarah: *\"we're fixing systems, not people.\"*",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        },
+        {
+          "point_id": "P4",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: No double charges: failed requests errored before capture\n\nSUMMARY:\n# Incident Summary: payment-api P1 — 2026-07-13\n\n## Overview\nA **SEV-2** incident affecting customer-facing checkout (`POST /v2/charges`) was declared at 09:06 and mitigated at 09:58. Total impact window: **~63 minutes (08:55–09:58)** of degraded checkout.\n\n## Timeline\n- **09:02** — PagerDuty P1 fires: payment-api p99 latency 8.4s (SLO 800ms), 5xx rate 12% and climbing. Started ~08:55.\n- **09:06** — Sarah declares SEV-2. Priya = investigation lead, Tom = mitigation, Jake = deploy analysis.\n- **09:07** — Jake notes v2.14.0 (deployed 08:45) added the saved-payment-methods endpoint; doesn't touch `/charges` directly but shares the same DB.\n- **09:10** — Priya finds payment-db connections pinned at max (200/200) since 08:52 — suspected pool exhaustion, not a traffic spike.\n- **09:25** — **Root cause identified:** hundreds of `idle in transaction` sessions from payment-service, all from the new saved-payment-methods endpoint. It runs **one query per stored payment method (N+1)** and holds the connection for the whole request. Under morning traffic this exhausts the pool and starves `/charges`.\n- **09:27** — Jake confirms the N+1 (fetching methods in a loop instead of a single JOIN).\n- **09:28–09:29** — Priya: \"Rollback first, fix later.\" Sarah approves rollback to v2.13.2.\n- **09:30** — Tom begins rollback.\n- **09:52** — Rollback complete; connections draining (200 → 121 → 64); p99 down to 1.9s and falling.\n- **09:58** — Metrics recovered: p99 720ms, 5xx 0.3%, pool at 41/200. **Mitigated.**\n- **10:00** — Elena confirms frontend checkout error rate back to baseline; test transactions clean.\n\n## Customer Impact\n- ~63 minutes of degraded checkout.\n- David confirmed with Priya that failed requests errored **before capture** — **no double charges**; failed orders simply didn't go through.\n- Acme Corp replied to on CS-4821; status page updated to \"resolved.\"\n\n## Action Items (pre-postmortem)\n1. **Jake** — Fix the N+1 query, re-ship saved-payment-methods behind feature flag `saved_payment_methods_v2`. Due **7/20**.\n2. **Tom** — Add connection-pool saturation alert (warn 70%, page 90%). Due **7/17**.\n3. **Aisha** — Add payment-path load test to CI. Due **7/24**.\n4. **Priya** — Update payment-service runbook with pool-exhaustion playbook. Due **7/15**.\n\n## Next Steps\n- **Blameless postmortem:** Wednesday 7/15 at 10am (invite from Sarah).\n- Reminder from Sarah: *\"we're fixing systems, not people.\"*",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        },
+        {
+          "point_id": "P5",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: 4 postmortem action items assigned (fix+flag by 7/20, pool alert by 7/17, CI load test by 7/24, runbook by 7/15); postmortem 7/15\n\nSUMMARY:\n# Incident Summary: payment-api P1 — 2026-07-13\n\n## Overview\nA **SEV-2** incident affecting customer-facing checkout (`POST /v2/charges`) was declared at 09:06 and mitigated at 09:58. Total impact window: **~63 minutes (08:55–09:58)** of degraded checkout.\n\n## Timeline\n- **09:02** — PagerDuty P1 fires: payment-api p99 latency 8.4s (SLO 800ms), 5xx rate 12% and climbing. Started ~08:55.\n- **09:06** — Sarah declares SEV-2. Priya = investigation lead, Tom = mitigation, Jake = deploy analysis.\n- **09:07** — Jake notes v2.14.0 (deployed 08:45) added the saved-payment-methods endpoint; doesn't touch `/charges` directly but shares the same DB.\n- **09:10** — Priya finds payment-db connections pinned at max (200/200) since 08:52 — suspected pool exhaustion, not a traffic spike.\n- **09:25** — **Root cause identified:** hundreds of `idle in transaction` sessions from payment-service, all from the new saved-payment-methods endpoint. It runs **one query per stored payment method (N+1)** and holds the connection for the whole request. Under morning traffic this exhausts the pool and starves `/charges`.\n- **09:27** — Jake confirms the N+1 (fetching methods in a loop instead of a single JOIN).\n- **09:28–09:29** — Priya: \"Rollback first, fix later.\" Sarah approves rollback to v2.13.2.\n- **09:30** — Tom begins rollback.\n- **09:52** — Rollback complete; connections draining (200 → 121 → 64); p99 down to 1.9s and falling.\n- **09:58** — Metrics recovered: p99 720ms, 5xx 0.3%, pool at 41/200. **Mitigated.**\n- **10:00** — Elena confirms frontend checkout error rate back to baseline; test transactions clean.\n\n## Customer Impact\n- ~63 minutes of degraded checkout.\n- David confirmed with Priya that failed requests errored **before capture** — **no double charges**; failed orders simply didn't go through.\n- Acme Corp replied to on CS-4821; status page updated to \"resolved.\"\n\n## Action Items (pre-postmortem)\n1. **Jake** — Fix the N+1 query, re-ship saved-payment-methods behind feature flag `saved_payment_methods_v2`. Due **7/20**.\n2. **Tom** — Add connection-pool saturation alert (warn 70%, page 90%). Due **7/17**.\n3. **Aisha** — Add payment-path load test to CI. Due **7/24**.\n4. **Priya** — Update payment-service runbook with pool-exhaustion playbook. Due **7/15**.\n\n## Next Steps\n- **Blameless postmortem:** Wednesday 7/15 at 10am (invite from Sarah).\n- Reminder from Sarah: *\"we're fixing systems, not people.\"*",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        }
+      ],
+      "application_calls": 5
+    },
+    "B": {
+      "status": "ok",
+      "hits": 5,
+      "total": 5,
+      "coverage": 1.0,
+      "points": [
+        {
+          "point_id": "P1",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: SEV-2 payment outage, impact window 08:55-09:58 (~63 min degraded checkout)\n\nSUMMARY:\n# Incident Summary: payment-api P1 / SEV-2 — 2026-07-13\n\n## Overview\nA customer-facing P1 incident affecting the `payment-api` charge path (`POST /v2/charges`), declared SEV-2 by Sarah. Mitigated in ~63 minutes via rollback.\n\n## Timeline\n- **08:55** — Incident begins (degraded checkout)\n- **09:02** — PagerDuty P1 fires: p99 latency 8.4s (SLO 800ms), 5xx rate 12% and climbing\n- **09:06** — Sarah declares SEV-2; assigns Priya as investigation lead, Tom on mitigation\n- **09:10** — Priya identifies DB connection pool exhaustion (200/200 since 08:52)\n- **09:25** — Root cause found: N+1 query in new saved-payment-methods endpoint holds connections as `idle in transaction` (187 rows)\n- **09:29** — Sarah orders rollback to v2.13.2\n- **09:52** — Rollback complete; connections draining (200 → 121 → 64), p99 down to 1.9s\n- **09:58** — Metrics recovered: p99 720ms, 5xx 0.3%, pool at 41/200. **Mitigated.**\n- **10:00** — Elena confirms frontend checkout error rate back to baseline\n- **10:10** — David confirms no double charges (failed requests errored before capture); status page updated to \"resolved\"\n\n## Root Cause\nv2.14.0 introduced a saved-payment-methods endpoint that runs one query per stored payment method (N+1) and holds the DB connection for the entire request. Under morning traffic, this exhausted the connection pool and starved the `/charges` path.\n\n## Impact\n- **Window:** 08:55–09:58 (~63 minutes of degraded checkout)\n- Customer-facing checkout failures; no double charges (failed orders simply didn't go through)\n- Acme Corp replied to on ticket CS-4821\n\n## Resolution\nRolled back to v2.13.2. Fix deferred to post-incident (no heroics during incident).\n\n---\n\n## Follow-Up Actions\n\n| # | Action | Owner | Due Date |\n|---|--------|-------|----------|\n| 1 | Fix the N+1 query; re-ship saved-payment-methods behind feature flag `saved_payment_methods_v2` (single JOIN + explicit connection release) | **Jake** | 7/20 |\n| 2 | Add connection-pool saturation alert (warn at 70%, page at 90%) | **Tom** | 7/17 |\n| 3 | Add payment-path load test to CI (baseline checkout; checkout + saved-methods at 5x; assert pool utilisation < 70%) | **Aisha** | 7/24 |\n| 4 | Update payment-service runbook with pool-exhaustion playbook + \"first 10 minutes\" checklist | **Priya** | 7/15 (before postmortem) |\n| 5 | Update affected customers and status page | **David** | ✅ Done (10:10) |\n\n## Next Steps\n- **Blameless postmortem:** Wednesday 7/15 at 10am (invite from Sarah)\n- Reminder from Sarah: *\"we're fixing systems, not people.\"*",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        },
+        {
+          "point_id": "P2",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: Root cause: v2.14.0 saved-payment-methods endpoint introduced N+1 query, exhausting the DB connection pool (200/200) and starving /charges\n\nSUMMARY:\n# Incident Summary: payment-api P1 / SEV-2 — 2026-07-13\n\n## Overview\nA customer-facing P1 incident affecting the `payment-api` charge path (`POST /v2/charges`), declared SEV-2 by Sarah. Mitigated in ~63 minutes via rollback.\n\n## Timeline\n- **08:55** — Incident begins (degraded checkout)\n- **09:02** — PagerDuty P1 fires: p99 latency 8.4s (SLO 800ms), 5xx rate 12% and climbing\n- **09:06** — Sarah declares SEV-2; assigns Priya as investigation lead, Tom on mitigation\n- **09:10** — Priya identifies DB connection pool exhaustion (200/200 since 08:52)\n- **09:25** — Root cause found: N+1 query in new saved-payment-methods endpoint holds connections as `idle in transaction` (187 rows)\n- **09:29** — Sarah orders rollback to v2.13.2\n- **09:52** — Rollback complete; connections draining (200 → 121 → 64), p99 down to 1.9s\n- **09:58** — Metrics recovered: p99 720ms, 5xx 0.3%, pool at 41/200. **Mitigated.**\n- **10:00** — Elena confirms frontend checkout error rate back to baseline\n- **10:10** — David confirms no double charges (failed requests errored before capture); status page updated to \"resolved\"\n\n## Root Cause\nv2.14.0 introduced a saved-payment-methods endpoint that runs one query per stored payment method (N+1) and holds the DB connection for the entire request. Under morning traffic, this exhausted the connection pool and starved the `/charges` path.\n\n## Impact\n- **Window:** 08:55–09:58 (~63 minutes of degraded checkout)\n- Customer-facing checkout failures; no double charges (failed orders simply didn't go through)\n- Acme Corp replied to on ticket CS-4821\n\n## Resolution\nRolled back to v2.13.2. Fix deferred to post-incident (no heroics during incident).\n\n---\n\n## Follow-Up Actions\n\n| # | Action | Owner | Due Date |\n|---|--------|-------|----------|\n| 1 | Fix the N+1 query; re-ship saved-payment-methods behind feature flag `saved_payment_methods_v2` (single JOIN + explicit connection release) | **Jake** | 7/20 |\n| 2 | Add connection-pool saturation alert (warn at 70%, page at 90%) | **Tom** | 7/17 |\n| 3 | Add payment-path load test to CI (baseline checkout; checkout + saved-methods at 5x; assert pool utilisation < 70%) | **Aisha** | 7/24 |\n| 4 | Update payment-service runbook with pool-exhaustion playbook + \"first 10 minutes\" checklist | **Priya** | 7/15 (before postmortem) |\n| 5 | Update affected customers and status page | **David** | ✅ Done (10:10) |\n\n## Next Steps\n- **Blameless postmortem:** Wednesday 7/15 at 10am (invite from Sarah)\n- Reminder from Sarah: *\"we're fixing systems, not people.\"*",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        },
+        {
+          "point_id": "P3",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: Mitigation: rollback to v2.13.2 completed 09:58, metrics recovered (p99 720ms, 5xx 0.3%)\n\nSUMMARY:\n# Incident Summary: payment-api P1 / SEV-2 — 2026-07-13\n\n## Overview\nA customer-facing P1 incident affecting the `payment-api` charge path (`POST /v2/charges`), declared SEV-2 by Sarah. Mitigated in ~63 minutes via rollback.\n\n## Timeline\n- **08:55** — Incident begins (degraded checkout)\n- **09:02** — PagerDuty P1 fires: p99 latency 8.4s (SLO 800ms), 5xx rate 12% and climbing\n- **09:06** — Sarah declares SEV-2; assigns Priya as investigation lead, Tom on mitigation\n- **09:10** — Priya identifies DB connection pool exhaustion (200/200 since 08:52)\n- **09:25** — Root cause found: N+1 query in new saved-payment-methods endpoint holds connections as `idle in transaction` (187 rows)\n- **09:29** — Sarah orders rollback to v2.13.2\n- **09:52** — Rollback complete; connections draining (200 → 121 → 64), p99 down to 1.9s\n- **09:58** — Metrics recovered: p99 720ms, 5xx 0.3%, pool at 41/200. **Mitigated.**\n- **10:00** — Elena confirms frontend checkout error rate back to baseline\n- **10:10** — David confirms no double charges (failed requests errored before capture); status page updated to \"resolved\"\n\n## Root Cause\nv2.14.0 introduced a saved-payment-methods endpoint that runs one query per stored payment method (N+1) and holds the DB connection for the entire request. Under morning traffic, this exhausted the connection pool and starved the `/charges` path.\n\n## Impact\n- **Window:** 08:55–09:58 (~63 minutes of degraded checkout)\n- Customer-facing checkout failures; no double charges (failed orders simply didn't go through)\n- Acme Corp replied to on ticket CS-4821\n\n## Resolution\nRolled back to v2.13.2. Fix deferred to post-incident (no heroics during incident).\n\n---\n\n## Follow-Up Actions\n\n| # | Action | Owner | Due Date |\n|---|--------|-------|----------|\n| 1 | Fix the N+1 query; re-ship saved-payment-methods behind feature flag `saved_payment_methods_v2` (single JOIN + explicit connection release) | **Jake** | 7/20 |\n| 2 | Add connection-pool saturation alert (warn at 70%, page at 90%) | **Tom** | 7/17 |\n| 3 | Add payment-path load test to CI (baseline checkout; checkout + saved-methods at 5x; assert pool utilisation < 70%) | **Aisha** | 7/24 |\n| 4 | Update payment-service runbook with pool-exhaustion playbook + \"first 10 minutes\" checklist | **Priya** | 7/15 (before postmortem) |\n| 5 | Update affected customers and status page | **David** | ✅ Done (10:10) |\n\n## Next Steps\n- **Blameless postmortem:** Wednesday 7/15 at 10am (invite from Sarah)\n- Reminder from Sarah: *\"we're fixing systems, not people.\"*",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        },
+        {
+          "point_id": "P4",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: No double charges: failed requests errored before capture\n\nSUMMARY:\n# Incident Summary: payment-api P1 / SEV-2 — 2026-07-13\n\n## Overview\nA customer-facing P1 incident affecting the `payment-api` charge path (`POST /v2/charges`), declared SEV-2 by Sarah. Mitigated in ~63 minutes via rollback.\n\n## Timeline\n- **08:55** — Incident begins (degraded checkout)\n- **09:02** — PagerDuty P1 fires: p99 latency 8.4s (SLO 800ms), 5xx rate 12% and climbing\n- **09:06** — Sarah declares SEV-2; assigns Priya as investigation lead, Tom on mitigation\n- **09:10** — Priya identifies DB connection pool exhaustion (200/200 since 08:52)\n- **09:25** — Root cause found: N+1 query in new saved-payment-methods endpoint holds connections as `idle in transaction` (187 rows)\n- **09:29** — Sarah orders rollback to v2.13.2\n- **09:52** — Rollback complete; connections draining (200 → 121 → 64), p99 down to 1.9s\n- **09:58** — Metrics recovered: p99 720ms, 5xx 0.3%, pool at 41/200. **Mitigated.**\n- **10:00** — Elena confirms frontend checkout error rate back to baseline\n- **10:10** — David confirms no double charges (failed requests errored before capture); status page updated to \"resolved\"\n\n## Root Cause\nv2.14.0 introduced a saved-payment-methods endpoint that runs one query per stored payment method (N+1) and holds the DB connection for the entire request. Under morning traffic, this exhausted the connection pool and starved the `/charges` path.\n\n## Impact\n- **Window:** 08:55–09:58 (~63 minutes of degraded checkout)\n- Customer-facing checkout failures; no double charges (failed orders simply didn't go through)\n- Acme Corp replied to on ticket CS-4821\n\n## Resolution\nRolled back to v2.13.2. Fix deferred to post-incident (no heroics during incident).\n\n---\n\n## Follow-Up Actions\n\n| # | Action | Owner | Due Date |\n|---|--------|-------|----------|\n| 1 | Fix the N+1 query; re-ship saved-payment-methods behind feature flag `saved_payment_methods_v2` (single JOIN + explicit connection release) | **Jake** | 7/20 |\n| 2 | Add connection-pool saturation alert (warn at 70%, page at 90%) | **Tom** | 7/17 |\n| 3 | Add payment-path load test to CI (baseline checkout; checkout + saved-methods at 5x; assert pool utilisation < 70%) | **Aisha** | 7/24 |\n| 4 | Update payment-service runbook with pool-exhaustion playbook + \"first 10 minutes\" checklist | **Priya** | 7/15 (before postmortem) |\n| 5 | Update affected customers and status page | **David** | ✅ Done (10:10) |\n\n## Next Steps\n- **Blameless postmortem:** Wednesday 7/15 at 10am (invite from Sarah)\n- Reminder from Sarah: *\"we're fixing systems, not people.\"*",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        },
+        {
+          "point_id": "P5",
+          "status": "ok",
+          "hit": true,
+          "raw_output": "YES",
+          "request": {
+            "system": "You are a strict evaluator. Answer only YES or NO.",
+            "user": "Does this summary cover the following point (fully or in substance)?\n\nPOINT: 4 postmortem action items assigned (fix+flag by 7/20, pool alert by 7/17, CI load test by 7/24, runbook by 7/15); postmortem 7/15\n\nSUMMARY:\n# Incident Summary: payment-api P1 / SEV-2 — 2026-07-13\n\n## Overview\nA customer-facing P1 incident affecting the `payment-api` charge path (`POST /v2/charges`), declared SEV-2 by Sarah. Mitigated in ~63 minutes via rollback.\n\n## Timeline\n- **08:55** — Incident begins (degraded checkout)\n- **09:02** — PagerDuty P1 fires: p99 latency 8.4s (SLO 800ms), 5xx rate 12% and climbing\n- **09:06** — Sarah declares SEV-2; assigns Priya as investigation lead, Tom on mitigation\n- **09:10** — Priya identifies DB connection pool exhaustion (200/200 since 08:52)\n- **09:25** — Root cause found: N+1 query in new saved-payment-methods endpoint holds connections as `idle in transaction` (187 rows)\n- **09:29** — Sarah orders rollback to v2.13.2\n- **09:52** — Rollback complete; connections draining (200 → 121 → 64), p99 down to 1.9s\n- **09:58** — Metrics recovered: p99 720ms, 5xx 0.3%, pool at 41/200. **Mitigated.**\n- **10:00** — Elena confirms frontend checkout error rate back to baseline\n- **10:10** — David confirms no double charges (failed requests errored before capture); status page updated to \"resolved\"\n\n## Root Cause\nv2.14.0 introduced a saved-payment-methods endpoint that runs one query per stored payment method (N+1) and holds the DB connection for the entire request. Under morning traffic, this exhausted the connection pool and starved the `/charges` path.\n\n## Impact\n- **Window:** 08:55–09:58 (~63 minutes of degraded checkout)\n- Customer-facing checkout failures; no double charges (failed orders simply didn't go through)\n- Acme Corp replied to on ticket CS-4821\n\n## Resolution\nRolled back to v2.13.2. Fix deferred to post-incident (no heroics during incident).\n\n---\n\n## Follow-Up Actions\n\n| # | Action | Owner | Due Date |\n|---|--------|-------|----------|\n| 1 | Fix the N+1 query; re-ship saved-payment-methods behind feature flag `saved_payment_methods_v2` (single JOIN + explicit connection release) | **Jake** | 7/20 |\n| 2 | Add connection-pool saturation alert (warn at 70%, page at 90%) | **Tom** | 7/17 |\n| 3 | Add payment-path load test to CI (baseline checkout; checkout + saved-methods at 5x; assert pool utilisation < 70%) | **Aisha** | 7/24 |\n| 4 | Update payment-service runbook with pool-exhaustion playbook + \"first 10 minutes\" checklist | **Priya** | 7/15 (before postmortem) |\n| 5 | Update affected customers and status page | **David** | ✅ Done (10:10) |\n\n## Next Steps\n- **Blameless postmortem:** Wednesday 7/15 at 10am (invite from Sarah)\n- Reminder from Sarah: *\"we're fixing systems, not people.\"*",
+            "temperature": 0,
+            "max_output_tokens": 32
+          }
+        }
+      ],
+      "application_calls": 5
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "text": "**事件摘要（工程师版）**\n\n**时间线**\n- 2026-07-13 08:55 起：payment-api p99 延迟升至 8.4s（SLO 800ms），5xx 率 12% 且上升；影响 checkout `POST /v2/charges`。\n- 09:02 PagerDuty P1 触发；09:06 宣布 SEV-2，Priya 任调查负责人，Tom 负责缓解。\n- 09:10 发现 payment-db 活跃连接自 08:52 起打满（200/200），初判为连接池耗尽而非流量激增。\n- 09:25 定位：`pg_stat_activity` 显示大量来自 payment-service 的 idle-in-transaction 会话，均来自新增 saved-payment-methods 端点；该端点对每个已存支付方式执行一次查询（N+1），并在整个请求期间持有连接，早高峰流量下耗尽连接池，拖垮 `/charges`。\n- 09:29 决定先回滚；09:30 开始回滚至 v2.13.2。\n- 09:52 回滚完成，全部 pod 运行 v2.13.2；连接数 200→121→64，p99 降至 1.9s 并继续下降。\n- 09:58 指标恢复：p99 720ms，5xx 0.3%，连接池 41/200；基础设施侧判定已缓解。\n- 10:00 前端 checkout 错误率回到基线，测试交易正常。\n- 10:02 宣布 09:58 缓解；影响窗口 08:55–09:58，约 63 分钟 checkout 降级。\n\n**证据**\n- DB 指标：连接池自 08:52 打满。\n- `pg_stat_activity` 查询显示 187 行 idle-in-transaction 会话（payment-service）。\n- Jake 确认 v2.14.0 新增 saved-payment-methods 端点，虽不直接触及 `/charges`，但访问同一 DB；其实现为循环逐条获取，未用单次 JOIN。\n\n**已执行操作**\n- 回滚 payment-api 至 v2.13.2（Tom，09:30–09:52）。\n- 确认指标与前端 checkout 恢复。\n\n**当前状态**\n- 已缓解（09:58）。根因已定位为 N+1 查询导致连接池耗尽。客户沟通与状态页更新由 David 负责（已指示，未见完成确认）。\n\n**待办（负责人 / 期限）**\n1. Jake：修复 N+1，将 saved-payment-methods 置于 feature flag（`saved_payment_methods_v2`）后重新发布；改为单次 JOIN + 显式释放连接；PR 次日提交。期限 7/20。\n2. Tom：新增连接池饱和告警（70% 警告，90% 告警）。期限 7/17。\n3. Aisha：在 CI 中加入支付路径负载测试（基线 checkout、checkout+saved-methods 5x、断言池利用率 <70%）；先提交测试计划评审。期限 7/24。\n4. Priya：更新 payment-service runbook，加入连接池耗尽处置手册及“前 10 分钟”清单。期限 7/15，postmortem 前。\n\n**后续**\n- 无责 postmortem：7/15（周三）10:00，Sarah 发邀请。",
+  "mode": "deepseek",
+  "model": "deepseek-chat",
+  "audience": "engineer",
+  "strategy": "single",
+  "partials": [],
+  "token_counting": "conservative UTF-8 byte estimate",
+  "input_estimate": 4773,
+  "context_budget": 32000,
+  "application_calls": 1
+}
