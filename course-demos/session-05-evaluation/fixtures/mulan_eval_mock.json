@@ -1,0 +1,97 @@
+{
+  "description": "人工编写的双方法示例，仅用于回放，不代表模型评分。",
+  "input_sha256": "7e5790fb65c80127104dcc208e10e5e72d56f992e1f5dc44c20c434d1f32c303",
+  "methods_sha256": "47288b3dfb0dcc31f074160d7d5b4a24ea418e71bb2dbd0673fa1835303f5c81",
+  "verdicts": {
+    "A": {
+      "coverage": {
+        "k1": "YES",
+        "k2": "YES",
+        "k3": "YES",
+        "k4": "YES",
+        "k5": "YES"
+      },
+      "quality": {
+        "score": 5,
+        "feedback": {
+          "instruction_following": "完成主要故事摘要，包含从军、征战、受赏选择、返乡与身份揭晓。",
+          "groundedness": "主要事件均有原文依据，没有新增重要人物关系。",
+          "conciseness": "简洁保留关键情节，未罗列采购等次要细节。",
+          "fluency": "按故事先后叙述，语言清楚流畅。"
+        },
+        "evidence": [
+          {
+            "message_id": "p04",
+            "quote": "木蘭不用尚書郎，願借明駝千里足，送兒還故鄉。",
+            "comment": "支持摘要中不愿任官、请求返乡的选择。"
+          },
+          {
+            "message_id": "p05",
+            "quote": "出門看火伴，火伴皆驚惶：「同行十二年，不知木蘭是女郎！」",
+            "comment": "支持伙伴在返乡后才发现身份并惊讶。"
+          }
+        ]
+      }
+    },
+    "B": {
+      "coverage": {
+        "k1": "YES",
+        "k2": "YES",
+        "k3": "YES",
+        "k4": "YES",
+        "k5": "YES"
+      },
+      "quality": {
+        "score": 1,
+        "feedback": {
+          "instruction_following": "涵盖所需情节，但新增婚恋关系，违反忠于原文的要求。",
+          "groundedness": "“木兰与一位同行将领成婚”没有给定原文依据，按 rubric 给 1 分。",
+          "conciseness": "主要情节齐全，末句是无依据的额外信息。",
+          "fluency": "行文通顺，但流畅不能抵消事实编造。"
+        },
+        "evidence": [
+          {
+            "message_id": "p05",
+            "quote": "出門看火伴，火伴皆驚惶：「同行十二年，不知木蘭是女郎！」",
+            "comment": "原文结尾叙事写到伙伴惊讶；结合全文未交代成婚。此局部引文只提供定位，全文缺失婚恋依据需人工核查。"
+          },
+          {
+            "message_id": "p06",
+            "quote": "兩兔傍地走，安能辨我是雄雌？",
+            "comment": "全诗以双兔比喻收尾，没有补充婚恋结局。"
+          }
+        ]
+      }
+    },
+    "C": {
+      "coverage": {
+        "k1": "YES",
+        "k2": "YES",
+        "k3": "NO",
+        "k4": "NO",
+        "k5": "NO"
+      },
+      "quality": {
+        "score": 2,
+        "feedback": {
+          "instruction_following": "未完成要求：缺少受赏后的选择、返乡团聚与身份揭晓。",
+          "groundedness": "已写出的从军和征战情节有依据。",
+          "conciseness": "过度压缩，遗漏核心情节，不是简洁完整的摘要。",
+          "fluency": "语言通顺，但故事结尾没有交代。"
+        },
+        "evidence": [
+          {
+            "message_id": "p04",
+            "quote": "木蘭不用尚書郎，願借明駝千里足，送兒還故鄉。",
+            "comment": "摘要遗漏明确要求的辞官返乡选择。"
+          },
+          {
+            "message_id": "p05",
+            "quote": "出門看火伴，火伴皆驚惶：「同行十二年，不知木蘭是女郎！」",
+            "comment": "摘要遗漏身份揭晓及伙伴反应。"
+          }
+        ]
+      }
+    }
+  }
+}

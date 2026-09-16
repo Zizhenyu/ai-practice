@@ -1,0 +1,66 @@
+{
+  "description": "人工编写的教学评分；不是模型运行结果，不支持任意输入。",
+  "rubric_version": "google-teaching-v1",
+  "input_sha256": "4e35acf9487aa457ef51fbbe135364b5eb775d6367fc42186697952947136ca8",
+  "prompt_sha256": "dc34feacfe9cd64824f88166104f72897765ec67ce251abf97edce4add944cf5",
+  "verdicts": {
+    "good": {
+      "score": 5,
+      "feedback": {
+        "instruction_following": "包含影响、处置、根因状态与待办。",
+        "groundedness": "区分请求、用户、订单，并保留未知状态。",
+        "conciseness": "保留关键内容，去除了午餐和主题色讨论。",
+        "fluency": "分段清楚，语言易读。"
+      },
+      "evidence": [
+        {
+          "message_id": "1700000000.000001",
+          "quote": "按用户 ID 去重后，受影响用户为 430 位；涉及 512 个订单",
+          "comment": "摘要采用更正后的用户数和订单数。"
+        },
+        {
+          "message_id": "1700000000.000001",
+          "quote": "这里承诺的是方案提交，不是今天全部上线。",
+          "comment": "摘要准确区分计划提交与上线完成。"
+        }
+      ]
+    },
+    "missing": {
+      "score": 2,
+      "feedback": {
+        "instruction_following": "未提供要求汇报的影响数字和有负责人/期限的待办。",
+        "groundedness": "保留部分内容有原文支持。",
+        "conciseness": "过度压缩，遗漏核心信息。",
+        "fluency": "分段清楚，语言易读。"
+      },
+      "evidence": [
+        {
+          "message_id": "1700000000.000001",
+          "quote": "我负责交易对账，今天 12:00 前给第一版结果。",
+          "comment": "摘要遗漏 Erin 的待办和期限。"
+        }
+      ]
+    },
+    "wrong": {
+      "score": 1,
+      "feedback": {
+        "instruction_following": "形式上包含要求的各部分。",
+        "groundedness": "把用户数改成请求数，且错误宣布 v2.4 是已确认根因。",
+        "conciseness": "篇幅适中，但不能抵消事实错误。",
+        "fluency": "分段清楚，语言易读。"
+      },
+      "evidence": [
+        {
+          "message_id": "1700000000.000001",
+          "quote": "按用户 ID 去重后，受影响用户为 430 位",
+          "comment": "摘要写成 1,260 名用户，与最终统计矛盾。"
+        },
+        {
+          "message_id": "1700000000.000001",
+          "quote": "不要把发布版本与配置问题之间的关系写成定论。",
+          "comment": "摘要却将 v2.4 发布写为最终根因。"
+        }
+      ]
+    }
+  }
+}

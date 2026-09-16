@@ -1,0 +1,11 @@
+{
+  "description": "人工标注的独立任务对；仅用于教学，不用于证明生产阈值。",
+  "pairs": [
+    {"id": "p1", "owner_a": "jie", "owner_b": "jie", "a": "领取租用的帐篷", "b": "领取租用的帐篷", "merge": true},
+    {"id": "p2", "owner_a": "jie", "owner_b": "jie", "a": "领取租用的帐篷", "b": "归还租用的帐篷", "merge": false},
+    {"id": "p3", "owner_a": "yu", "owner_b": "yu", "a": "购买食材", "b": "采购露营食品", "merge": true},
+    {"id": "p4", "owner_a": "ning", "owner_b": "ning", "a": "确认拼车名单", "b": "核对拼车名单", "merge": true},
+    {"id": "p5", "owner_a": "jie", "owner_b": "peng", "a": "检查炉具", "b": "检查炉具", "merge": false},
+    {"id": "p6", "owner_a": null, "owner_b": null, "a": "准备音箱", "b": "准备音箱", "merge": false}
+  ]
+}

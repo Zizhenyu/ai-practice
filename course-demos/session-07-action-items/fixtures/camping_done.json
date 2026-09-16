@@ -1,0 +1,10 @@
+{
+  "description": "人工完成状态：截至 2026-09-21，领取帐篷和确认拼车已完成；仅绑定正常参考提取。",
+  "as_of": "2026-09-21",
+  "input_sha256": "17c1fbf0a9775b17db5da38ad506f46cff3fdae427ee71568cac79d034c94c58",
+  "extraction_sha256": "60630f27d43710377901d80fad3342be04b8bf2a803f09f8a443650d47c1129c",
+  "completed_task_ids": [
+    "task-54ba3b4e4ce49255",
+    "task-aa29d27b2790525a"
+  ]
+}
