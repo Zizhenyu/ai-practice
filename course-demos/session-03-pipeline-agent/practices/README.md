@@ -1,5 +1,7 @@
 # L3 课后作业参考答案
 
+同目录另附 [L2 rate_limit 作业参考答案与测试说明](rate_limit_reference.md)。
+
 保留原始模板，参考答案供完成作业后核对。
 
 - 作业 1：[双受众摘要](summary_two_audiences_reference.md)
